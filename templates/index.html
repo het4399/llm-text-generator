@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Text Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>LLM Text Generator</h1>
+        <div class="input-section">
+            <input type="text" id="websiteUrl" placeholder="Enter website URL here..." required>
+            <button id="generateBtn">Generate LLM Text</button>
+        </div>
+        <p id="statusMessage" style="color: gray;"></p>
+        <div class="output-section">
+            <h2>Generated Output:</h2>
+            <div class="textarea-container">
+                <textarea id="outputText" readonly rows="20" cols="80" style="width: 100%;"></textarea>
+                <div class="button-container">
+                    <button id="copyBtn">Copy to Clipboard</button>
+                    <span id="copyMessage" style="display: none; color: green; margin-left: 10px;">Copied!</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Processing overlay -->
+    <div class="processing-overlay" id="processingOverlay">
+        <div class="spinner-container">
+            <div class="spinner"></div>
+            <div class="processing-message">Processing website content...</div>
+            <div class="processing-detail" id="processingDetail">This may take a few moments</div>
+            <div class="processing-progress">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html> 
