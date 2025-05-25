@@ -1,5 +1,3 @@
-read me file
-
 # LLM Text Generator
 
 A simple web application that generates LLM text from a website URL.
