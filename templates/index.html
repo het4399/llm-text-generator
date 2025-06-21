@@ -9,9 +9,24 @@
 <body>
     <div class="container">
         <h1>LLM Text Generator</h1>
+        <p class="subtitle">Transform any website into structured, AI-ready content</p>
+        
+        <div class="output-type-selection">
+            <h3>Choose Output Type</h3>
+            <div class="radio-group">
+                <div class="radio-option">
+                    <input type="radio" name="outputType" id="llmsTxt" value="llms_txt" checked>
+                    <label for="llmsTxt">LLM Text (Summarized)</label>
+                </div>
+                <div class="radio-option">
+                    <input type="radio" name="outputType" id="llmsFullTxt" value="llms_full_txt">
+                    <label for="llmsFullTxt">LLM Full Text (Full Content)</label>
+                </div>
+            </div>
+        </div>
         <div class="input-section">
-            <input type="text" id="websiteUrl" placeholder="Enter website URL here..." required>
-            <button id="generateBtn">Generate LLM Text</button>
+            <input type="text" id="websiteUrl" placeholder="Enter website URL (e.g., https://example.com)" required>
+            <button id="generateBtn" class="btn btn-primary">Generate LLM Text</button>
         </div>
         <p id="statusMessage" style="color: gray;"></p>
         <div class="output-section">
@@ -19,8 +34,9 @@
             <div class="textarea-container">
                 <textarea id="outputText" readonly rows="20" cols="80" style="width: 100%;"></textarea>
                 <div class="button-container">
-                    <button id="copyBtn">Copy to Clipboard</button>
-                    <span id="copyMessage" style="display: none; color: green; margin-left: 10px;">Copied!</span>
+                    <button id="copyBtn" class="btn btn-secondary">📋 Copy to Clipboard</button>
+                    <button id="downloadBtn" class="btn btn-accent">📥 Download text file</button>
+                    <span id="copyMessage" style="display: none;">Copied!</span>
                 </div>
             </div>
         </div>

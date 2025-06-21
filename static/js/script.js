@@ -4,10 +4,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const outputText = document.getElementById('outputText');
     const statusMessage = document.getElementById('statusMessage');
     const copyBtn = document.getElementById('copyBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
     const copyMessage = document.getElementById('copyMessage');
     const processingOverlay = document.getElementById('processingOverlay');
     const processingDetail = document.getElementById('processingDetail');
     const progressBar = document.getElementById('progressBar');
+    const llmsTxtRadio = document.getElementById('llmsTxt');
+    const llmsFullTxtRadio = document.getElementById('llmsFullTxt');
 
     // Function to validate URL
     function isValidUrl(string) {
@@ -34,10 +37,11 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Show processing message
             statusMessage.textContent = 'Processing website content...';
-            statusMessage.style.color = 'gray';
+            statusMessage.className = 'status-info';
             
-            // Hide copy button and message while processing
+            // Hide copy and download buttons and message while processing
             copyBtn.style.display = 'none';
+            downloadBtn.style.display = 'none';
             copyMessage.style.display = 'none';
             
             // Show processing overlay with animation
@@ -108,9 +112,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reset processing state first
         setProcessingState(false);
         
-        // Show error message
+        // Show error message with modern styling
         statusMessage.textContent = `Error: ${message}`;
-        statusMessage.style.color = 'red';
+        statusMessage.className = 'status-error';
         outputText.value = `An error occurred: ${message}\n\nPlease try again with a different URL or check your API key configuration.`;
     }
 
@@ -128,8 +132,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        const selectedOutputType = document.querySelector('input[name="outputType"]:checked').value;
+        
         // Set UI to processing state
-        setProcessingState(true, 'Fetching website content...');
+        setProcessingState(true, 'Fetching and processing website content...');
 
         try {
             // Update processing detail after a delay to simulate progress
@@ -151,40 +157,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ url: url })
+                body: JSON.stringify({
+                    websiteUrl: url,
+                    outputType: selectedOutputType
+                })
             });
 
-            // Complete the progress animation
-            completeProgressAnimation();
-            
-            // Add a small delay before hiding the overlay for smoother transition
-            setTimeout(() => {
-                // Reset UI processing state
+            if (response.ok) {
+                const result = await response.json();
+                completeProgressAnimation();
                 setProcessingState(false);
-                
-                if (!response.ok) {
-                    try {
-                        const errorData = response.json();
-                        throw new Error(errorData.error || `HTTP error: ${response.status}`);
-                    } catch {
-                        throw new Error(`HTTP error: ${response.status}`);
-                    }
-                }
-            }, 500);
 
-            const data = await response.json();
-            
-            // Display llms.txt content in output area
-            outputText.value = data.llms_text;
-            
-            // Update status message
-            statusMessage.textContent = 'Done!';
-            statusMessage.style.color = 'green';
-            
-            // Show copy button
-            copyBtn.style.display = 'inline-block';
-            
-            console.log('Response from server:', data);
+                if (result.llms_text) {
+                    outputText.value = result.llms_text;
+                    statusMessage.textContent = 'LLM Text generated successfully!';
+                    statusMessage.className = 'status-success';
+                } else if (result.llms_full_text) {
+                    outputText.value = result.llms_full_text;
+                    statusMessage.textContent = 'LLM Full Text generated successfully! (Note: This content can be very large and may require specific LLM handling like RAG or a large context window.)';
+                    statusMessage.className = 'status-success';
+                } else {
+                    showError('Unexpected response format from server.');
+                }
+                copyBtn.style.display = 'inline-block'; // Show copy button after success
+                downloadBtn.style.display = 'inline-block'; // Show download button after success
+            } else {
+                const errorData = await response.json();
+                showError(errorData.error || 'An unknown error occurred.');
+            }
             
         } catch (error) {
             // Reset UI processing state and show error
@@ -222,6 +222,32 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.error('Copy error:', err);
         }
+    });
+    
+    // Implement download text file functionality
+    downloadBtn.addEventListener('click', () => {
+        if (!outputText.value) {
+            return;
+        }
+        
+        // Create a blob with the text content
+        const blob = new Blob([outputText.value], { type: 'text/plain' });
+        
+        // Create a temporary URL for the blob
+        const url = window.URL.createObjectURL(blob);
+        
+        // Create a temporary anchor element to trigger download
+        const downloadLink = document.createElement('a');
+        downloadLink.href = url;
+        downloadLink.download = 'llms.txt'; // Set the filename
+        
+        // Append to body, click, and remove
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        
+        // Clean up the URL object
+        window.URL.revokeObjectURL(url);
     });
     
     function showCopySuccess() {

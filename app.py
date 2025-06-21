@@ -1032,6 +1032,155 @@ def get_link_title(soup, a_tag, full_url):
     logger.debug(f"Title extraction attempts for {full_url}: {', '.join(attempts)}")
     return f"Page at {parsed_url.path or '/'}"
 
+def extract_internal_links(soup, website_url):
+    """
+    Extract internal links from the parsed HTML.
+    
+    Args:
+        soup (BeautifulSoup): The parsed HTML
+        website_url (str): The base website URL
+        
+    Returns:
+        list: List of internal links with descriptions and URLs
+    """
+    internal_links = []
+    parsed_base_url = urlparse(website_url)
+    base_domain = parsed_base_url.netloc
+    
+    # Track unique URLs to avoid duplicates
+    unique_urls = set()
+    
+    # Find all links in the page
+    for a_tag in soup.find_all('a', href=True):
+        href = a_tag.get('href')
+        
+        # Skip empty links, anchors, and non-HTTP schemes
+        if not href or href.startswith(('javascript:', 'mailto:', 'tel:')):
+            continue
+        
+        # Construct absolute URL
+        full_url = urljoin(website_url, href)
+        parsed_url = urlparse(full_url)
+        
+        # Skip external links and ensure it's HTTP/HTTPS
+        if parsed_url.netloc != base_domain or not parsed_url.scheme.startswith(('http', 'https')):
+            continue
+        
+        # Skip if we've already processed this URL
+        if full_url in unique_urls:
+            continue
+        
+        unique_urls.add(full_url)
+        
+        # Get link title using the enhanced function
+        link_title = get_link_title(soup, a_tag, full_url)
+        
+        internal_links.append({
+            "description": link_title,
+            "url": full_url
+        })
+    
+    return internal_links
+
+def fetch_page_and_extract_full_content(page_url, link_title=None):
+    """
+    Fetches a web page and extracts its main content without LLM summarization.
+    This version aims to get as much relevant text as possible.
+    
+    Args:
+        page_url (str): The URL of the page to fetch
+        link_title (str, optional): The title of the link (for context in error messages)
+        
+    Returns:
+        str: The extracted and cleaned main content of the page, or an error message.
+    """
+    try:
+        if not check_robots_txt(page_url):
+            return f"Respecting robots.txt: Not allowed to access {page_url}"
+        
+        logger.info(f"Fetching full content for page: {page_url}")
+        response = requests.get(page_url, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Remove likely irrelevant elements
+        for element in soup.find_all(['nav', 'footer', 'aside', 'style', 'script', 'noscript', 'header', 'form', 'img', 'svg', 'iframe']):
+            element.decompose()
+        
+        # Prioritize main content areas for extraction
+        full_page_content = ""
+        content_selectors = [
+            'main', 'article', 'div[role="main"]', '.main-content', '.content', '.article',
+            '.post-content', '.entry-content', '.article-content', '.blog-content',
+            'section', 'div[class*="body"]', 'div[class*="page-body"]', 'div[class*="text"]'  # Added more general selectors
+        ]
+        
+        for selector in content_selectors:
+            elements = soup.select(selector)
+            for element in elements:
+                text = ' '.join(element.get_text(strip=True, separator=' ').split())
+                if text and len(text) > 50:  # Ensure it's substantial text
+                    full_page_content += text + "\n\n"  # Add double newline for separation
+        
+        # Fallback if primary selectors don't yield enough content
+        if not full_page_content and soup.body:
+            full_page_content = ' '.join(soup.body.get_text(strip=True, separator=' ').split())
+        
+        full_page_content = clean_text(full_page_content)  # Apply existing cleaning function
+        
+        return full_page_content if full_page_content else f"No substantial content extracted from {page_url}"
+        
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout error fetching full content for {page_url}")
+        return f"Timeout accessing: {page_url}"
+    except requests.exceptions.ConnectionError:
+        logger.error(f"Connection error fetching full content for {page_url}")
+        return f"Connection error: {page_url}"
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response else "unknown"
+        logger.error(f"HTTP error {status_code} fetching full content for {page_url}")
+        return f"HTTP error {status_code}: {page_url}"
+    except Exception as e:
+        logger.error(f"Error fetching/extracting full content for {page_url}: {str(e)}")
+        return f"Error fetching content: {page_url} - {str(e)}"
+
+def format_llms_full_text(website_url, site_description, full_content_sections):
+    """
+    Format the llms-full.txt content.
+    
+    Args:
+        website_url (str): The main website URL
+        site_description (str): The site description
+        full_content_sections (list): List of dictionaries with 'title', 'url', and 'content' keys
+        
+    Returns:
+        str: Formatted llms-full.txt content
+    """
+    parsed_url = urlparse(website_url)
+    domain_name = parsed_url.netloc
+    
+    llms_full_text = f"# {domain_name} llms-full.txt\n\n"
+    llms_full_text += f"Website Description: {site_description}\n\n"
+    llms_full_text += "--- Start Full Website Content ---\n\n"
+    
+    # Sort by title for consistent output
+    sorted_sections = sorted(full_content_sections, key=lambda x: x.get("title", "").lower())
+    
+    for section in sorted_sections:
+        title = section.get("title", "No Title Available")
+        url = section.get("url", "No URL Available")
+        content = section.get("content", "No content extracted for this page.")
+        
+        llms_full_text += f"## Page Title: {title}\n"
+        llms_full_text += f"URL: {url}\n\n"
+        llms_full_text += f"{content}\n\n"
+        llms_full_text += "---\n\n"  # Use a clear separator between pages
+        
+    llms_full_text += "--- End Full Website Content ---\n"
+    
+    return llms_full_text
+
 def process_link_with_summary(link, base_url):
     """
     Process a single link to get its summary.
@@ -1072,132 +1221,118 @@ def index():
 
 @app.route('/generate_llm_text', methods=['POST'])
 def generate_llm_text():
-    """
-    Generate LLM text from a website URL.
-    
-    Expects a JSON body with a 'url' field.
-    Returns a JSON response with the formatted llms.txt content.
-    """
     try:
-        # Get the URL from the request
-        data = request.json
-        website_url = data.get('url', '')
-        
-        logger.info(f"Processing URL: {website_url}")
-        
-        # Validate URL
-        is_valid, error_message = validate_url(website_url)
-        if not is_valid:
-            logger.warning(f"Invalid URL: {website_url} - {error_message}")
-            return jsonify({"error": f"Invalid URL: {error_message}"}), 400
-        
-        # Check robots.txt (optional)
+        data = request.get_json()
+        website_url = data.get('websiteUrl')
+        output_type = data.get('outputType', 'llms_txt')  # Get the new outputType, default to 'llms_txt'
+
+        if not website_url:
+            return jsonify({"error": "Website URL is required"}), 400
+
+        if not validators.url(website_url):
+            return jsonify({"error": "Invalid URL format"}), 400
+
+        logger.info(f"Received request for URL: {website_url} with output type: {output_type}")
+
+        # Check robots.txt for the main website URL
         if not check_robots_txt(website_url):
-            logger.warning(f"Robots.txt disallows access to {website_url}")
-            return jsonify({"error": f"This site's robots.txt disallows scraping. Please try another URL."}), 403
-        
-        # Fetch the webpage with a timeout
-        logger.info(f"Fetching webpage: {website_url}")
-        response = requests.get(website_url, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()  # Raise exception for 4xx/5xx errors
-        
-        # Parse HTML
+            return jsonify({"error": f"Access to {website_url} is disallowed by robots.txt"}), 403
+
+        # Fetch the main page content
+        try:
+            logger.info(f"Fetching main page: {website_url}")
+            response = requests.get(website_url, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
+        except requests.exceptions.Timeout:
+            return jsonify({"error": f"Timeout accessing: {website_url}"}), 504
+        except requests.exceptions.ConnectionError:
+            return jsonify({"error": f"Connection error: {website_url}"}), 503
+        except requests.exceptions.HTTPError as e:
+            return jsonify({"error": f"HTTP error {e.response.status_code} for {website_url}"}), e.response.status_code
+        except Exception as e:
+            return jsonify({"error": f"Error fetching main page: {str(e)}"}), 500
+
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Extract site description using the dedicated function
+
         site_description = extract_site_description(soup, website_url)
-        
-        # Extract internal links
-        logger.info("Extracting internal links")
-        internal_links = []
-        parsed_base_url = urlparse(website_url)
-        base_domain = parsed_base_url.netloc
-        
-        # Track unique URLs to avoid duplicates
-        unique_urls = set()
-        
-        # Find all links in the page
-        for a_tag in soup.find_all('a', href=True):
-            href = a_tag.get('href')
-            
-            # Skip empty links, anchors, and non-HTTP schemes
-            if not href or href.startswith(('javascript:', 'mailto:', 'tel:')):
-                continue
-            
-            # Construct absolute URL
-            full_url = urljoin(website_url, href)
-            parsed_url = urlparse(full_url)
-            
-            # Skip external links and ensure it's HTTP/HTTPS
-            if parsed_url.netloc != base_domain or not parsed_url.scheme.startswith(('http', 'https')):
-                continue
-            
-            # Skip if we've already processed this URL
-            if full_url in unique_urls:
-                continue
-            
-            # Skip generic utility pages - Using the relaxed filter
-            if is_generic_utility_url(parsed_url.path):
-                logger.debug(f"Skipping generic utility URL: {full_url}")
-                continue
-            
-            unique_urls.add(full_url)
-            
-            # Get link title using the enhanced function
-            link_title = get_link_title(soup, a_tag, full_url)
-            
-            internal_links.append({
-                "description": link_title,
-                "url": full_url
-            })
-        
-        # Removed the MAX_LINKS_TO_PROCESS limit to process all valid links
-        # We will now process all found internal links
-        
-        # Ensure we have at least some links to process (if any were found)
-        if not internal_links:
-            logger.warning("No internal links found or all were filtered out")
-            
-        # Process links concurrently
-        logger.info(f"Processing {len(internal_links)} links with {CONCURRENT_WORKERS} workers")
-        summarized_links = []
-        
-        # Create a partial function with base_url
-        process_link = partial(process_link_with_summary, base_url=website_url)
-        
-        # Use ThreadPoolExecutor for concurrent processing
-        with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
-            # Submit all tasks and get future objects
-            future_to_link = {executor.submit(process_link, link): link for link in internal_links}
-            
-            # Process results as they complete
-            for i, future in enumerate(concurrent.futures.as_completed(future_to_link)):
-                try:
-                    result = future.result()
-                    logger.info(f"Completed link {i+1}/{len(internal_links)}: {result['url']}")
-                    summarized_links.append(result)
-                except Exception as e:
+        internal_links = extract_internal_links(soup, website_url)
+        valid_links = [
+            link for link in internal_links
+            if not is_generic_utility_url(urlparse(link['url']).path) and
+               not is_generic_link_text(link['description'])
+        ]
+        logger.info(f"Found {len(valid_links)} valid internal links after filtering.")
+
+        if output_type == 'llms_txt':
+            logger.info("Generating LLM Text (summarized)")
+            summarized_links = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
+                future_to_link = {executor.submit(get_page_summary, link["url"], link["description"]): link for link in valid_links}
+                for i, future in enumerate(concurrent.futures.as_completed(future_to_link)):
                     link = future_to_link[future]
-                    logger.error(f"Error processing link {link['url']}: {str(e)}")
-                    # Add a placeholder for failed links
-                    summarized_links.append({
-                        "summary": f"Error processing: {link['url']}",
-                        "url": link["url"],
-                        "title": link["description"]
-                    })
-        
-        # Format the llms.txt content
-        logger.info("Formatting llms.txt content")
-        llms_text = format_llms_text(website_url, site_description, summarized_links)
-        
-        # Return the formatted llms.txt content
-        logger.info("Successfully generated llms.txt content")
-        return jsonify({
-            "llms_text": llms_text,
-            # Include raw data for debugging or future use
-            "site_description": site_description,
-            "summarized_links": summarized_links
-        })
+                    try:
+                        summary = future.result()
+                        summarized_links.append({
+                            "summary": summary,
+                            "url": link["url"],
+                            "title": link["description"]
+                        })
+                    except Exception as exc:
+                        logger.error(f"Error processing link {link['url']}: {str(exc)}")
+                        summarized_links.append({
+                            "summary": f"Error processing: {link['url']}",
+                            "url": link["url"],
+                            "title": link["description"]
+                        })
+            
+            logger.info("Formatting llms.txt content")
+            llms_text = format_llms_text(website_url, site_description, summarized_links)
+            
+            logger.info("Successfully generated llms.txt content")
+            return jsonify({
+                "llms_text": llms_text,
+                "site_description": site_description,
+                "summarized_links": summarized_links
+            })
+
+        elif output_type == 'llms_full_txt':
+            logger.info("Generating LLM Full Text (full content)")
+            full_content_sections = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
+                # Use partial to pass fetch_page_and_extract_full_content for each link
+                fetch_and_extract_func = partial(fetch_page_and_extract_full_content)  # This new function must be defined below
+                future_to_link = {executor.submit(fetch_and_extract_func, link["url"], link["description"]): link for link in valid_links}
+
+                for i, future in enumerate(concurrent.futures.as_completed(future_to_link)):
+                    link = future_to_link[future]
+                    try:
+                        page_full_content = future.result()
+                        full_content_sections.append({
+                            "title": link["description"],
+                            "url": link["url"],
+                            "content": page_full_content
+                        })
+                    except Exception as exc:
+                        logger.error(f"Error processing full content for link {link['url']}: {str(exc)}")
+                        full_content_sections.append({
+                            "title": link["description"],
+                            "url": link["url"],
+                            "content": f"Error fetching or extracting content for {link['url']}: {str(exc)}"
+                        })
+            
+            logger.info("Formatting llms-full.txt content")
+            llms_full_text_output = format_llms_full_text(website_url, site_description, full_content_sections)  # This new function must be defined below
+            
+            logger.info("Successfully generated llms-full.txt content")
+            return jsonify({
+                "llms_full_text": llms_full_text_output,
+                "site_description": site_description,
+                "full_content_sections": full_content_sections
+            })
+
+        else:
+            logger.warning(f"Invalid outputType received: {output_type}")
+            return jsonify({"error": "Invalid outputType specified"}), 400
         
     except requests.exceptions.RequestException as e:
         error_message = f"Failed to fetch website: {str(e)}"
