@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressBar = document.getElementById('progressBar');
     const llmsTxtRadio = document.getElementById('llmsTxt');
     const llmsFullTxtRadio = document.getElementById('llmsFullTxt');
+    const llmsBothRadio = document.getElementById('llmsBoth');
 
     // Function to validate URL
     function isValidUrl(string) {
@@ -169,7 +170,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 completeProgressAnimation();
                 setProcessingState(false);
 
-                if (result.llms_text) {
+                if (result.llms_text && result.llms_full_text) {
+                    // Both outputs available
+                    const combinedOutput = `=== SUMMARIZED CONTENT ===\n\n${result.llms_text}\n\n=== FULL TEXT CONTENT ===\n\n${result.llms_full_text}`;
+                    outputText.value = combinedOutput;
+                    statusMessage.textContent = 'Both LLM Text and Full Text generated successfully!';
+                    statusMessage.className = 'status-success';
+                } else if (result.llms_text) {
                     outputText.value = result.llms_text;
                     statusMessage.textContent = 'LLM Text generated successfully!';
                     statusMessage.className = 'status-success';
@@ -238,6 +245,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let filename = 'llms.txt'; // default
         if (selectedOutputType === 'llms_full_txt') {
             filename = 'llms-full.txt';
+        } else if (selectedOutputType === 'llms_both') {
+            filename = 'llms-both.txt';
         }
         
         // Create a blob with the text content
@@ -279,6 +288,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Reset to default output type (summarized)
         llmsTxtRadio.checked = true;
+        llmsFullTxtRadio.checked = false;
+        llmsBothRadio.checked = false;
         
         // Focus back to the URL input for better UX
         websiteUrlInput.focus();

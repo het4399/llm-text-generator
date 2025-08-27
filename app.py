@@ -13,6 +13,7 @@ from urllib.robotparser import RobotFileParser
 import socket
 import concurrent.futures
 from functools import partial
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -486,15 +487,15 @@ def get_fallback_summary(soup, page_url, link_title=None, error_prefix=""):
     # Last resort
     return f"{error_prefix}Page at {page_url}"
 
-def format_llms_text(website_url, site_description, summarized_links):
+def format_llms_text(website_url, site_description, successful_links, failed_links):
     """
-    Format the llms.txt content according to the competitor's format.
-    Ensures proper sorting and formatting of links.
+    Format the llms.txt content with separate sections for successful and failed pages.
     
     Args:
         website_url (str): The main website URL
         site_description (str): The site description
-        summarized_links (list): List of dictionaries with 'summary', 'url', and 'title' keys
+        successful_links (list): List of dictionaries with 'summary', 'url', and 'title' keys
+        failed_links (list): List of dictionaries with 'url', 'title', and 'error' keys
         
     Returns:
         str: Formatted llms.txt content
@@ -503,32 +504,121 @@ def format_llms_text(website_url, site_description, summarized_links):
     parsed_url = urlparse(website_url)
     domain_name = parsed_url.netloc
     
-    # Format the header
-    llms_text = f"# {domain_name} llms.txt\n\n"
+    # Get current timestamp
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Calculate total pages
+    total_pages = len(successful_links) + len(failed_links)
+    
+    # Format the header with site information
+    llms_text = f"Site: {domain_name}\n"
+    llms_text += f"Generated: {current_time}\n"
+    llms_text += f"Total-Pages: {total_pages}\n\n"
     
     # Add site description
     llms_text += f"> {site_description}\n\n"
     
-    # Sort the summarized links alphabetically by link title, ensuring case-insensitive sort
-    # This ensures consistent ordering regardless of title capitalization
-    sorted_links = sorted(summarized_links, key=lambda x: x["title"].lower())
+    # Add successful pages section
+    if successful_links:
+        llms_text += "## Successfully Processed Pages\n\n"
+        
+        # Sort the successful links alphabetically by link title
+        sorted_successful = sorted(successful_links, key=lambda x: x["title"].lower())
+        
+        # Add each successful link in the format: - [Link Title](URL): Summary
+        for link in sorted_successful:
+            title = link["title"].strip()
+            url = link["url"].strip()
+            summary = link["summary"].strip()
+            
+            # Ensure the summary doesn't start with the title to avoid redundancy
+            if summary.lower().startswith(title.lower() + " "):
+                summary = summary[len(title):].strip()
+                # Remove leading punctuation if present
+                if summary and summary[0] in ['-', ':', ',', ';']:
+                    summary = summary[1:].strip()
+            
+            llms_text += f"- [{title}]({url}): {summary}\n"
+        
+        llms_text += "\n"
     
-    # Add each link in the format: - [Link Title](URL): Summary
-    for link in sorted_links:
-        title = link["title"].strip()
-        url = link["url"].strip()
-        summary = link["summary"].strip()
+    # Add failed pages section
+    if failed_links:
+        llms_text += "## Failed Pages\n\n"
         
-        # Ensure the summary doesn't start with the title to avoid redundancy
-        if summary.lower().startswith(title.lower() + " "):
-            summary = summary[len(title):].strip()
-            # Remove leading punctuation if present
-            if summary and summary[0] in ['-', ':', ',', ';']:
-                summary = summary[1:].strip()
+        # Sort the failed links alphabetically by link title
+        sorted_failed = sorted(failed_links, key=lambda x: x["title"].lower())
         
-        llms_text += f"- [{title}]({url}): {summary}\n"
+        # Add each failed link with error details
+        for link in sorted_failed:
+            title = link["title"].strip()
+            url = link["url"].strip()
+            error = link["error"].strip()
+            
+            llms_text += f"- [{title}]({url}): Failed to process - {error}\n"
+        
+        llms_text += "\n"
+    
+    # Add summary statistics
+    total_pages = len(successful_links) + len(failed_links)
+    success_rate = (len(successful_links) / total_pages * 100) if total_pages > 0 else 0
+    
+    llms_text += f"## Summary\n"
+    llms_text += f"- Total pages discovered: {total_pages}\n"
+    llms_text += f"- Successfully processed: {len(successful_links)}\n"
+    llms_text += f"- Failed to process: {len(failed_links)}\n"
+    llms_text += f"- Success rate: {success_rate:.1f}%\n"
     
     return llms_text
+
+def get_actual_page_title(page_url):
+    """
+    Fetch the actual page title from H1 tag or <title> tag.
+    
+    Args:
+        page_url (str): The URL of the page to fetch title from
+        
+    Returns:
+        str: The actual page title, or None if not found
+    """
+    try:
+        if not check_robots_txt(page_url):
+            return None
+        
+        response = requests.get(page_url, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Priority 1: H1 tag (most important for page content)
+        h1_tag = soup.find('h1')
+        if h1_tag:
+            h1_text = h1_tag.get_text(strip=True)
+            if h1_text and len(h1_text) > 5 and not is_generic_link_text(h1_text):
+                return h1_text
+        
+        # Priority 2: Page title tag
+        title_tag = soup.find('title')
+        if title_tag:
+            title_text = title_tag.get_text(strip=True)
+            if title_text and len(title_text) > 5:
+                # Clean up title (remove site name if present)
+                title_text = title_text.split('|')[0].split('-')[0].split('–')[0].strip()
+                if title_text and not is_generic_link_text(title_text):
+                    return title_text
+        
+        # Priority 3: First H2 tag (if no H1)
+        h2_tag = soup.find('h2')
+        if h2_tag:
+            h2_text = h2_tag.get_text(strip=True)
+            if h2_text and len(h2_text) > 5 and not is_generic_link_text(h2_text):
+                return h2_text
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error fetching page title for {page_url}: {str(e)}")
+        return None
 
 def extract_site_description(soup, website_url):
     """
@@ -1145,14 +1235,15 @@ def fetch_page_and_extract_full_content(page_url, link_title=None):
         logger.error(f"Error fetching/extracting full content for {page_url}: {str(e)}")
         return f"Error fetching content: {page_url} - {str(e)}"
 
-def format_llms_full_text(website_url, site_description, full_content_sections):
+def format_llms_full_text(website_url, site_description, successful_sections, failed_sections):
     """
-    Format the llms-full.txt content.
+    Format the llms-full.txt content with separate sections for successful and failed pages.
     
     Args:
         website_url (str): The main website URL
         site_description (str): The site description
-        full_content_sections (list): List of dictionaries with 'title', 'url', and 'content' keys
+        successful_sections (list): List of dictionaries with 'title', 'url', and 'content' keys
+        failed_sections (list): List of dictionaries with 'title', 'url', and 'error' keys
         
     Returns:
         str: Formatted llms-full.txt content
@@ -1162,22 +1253,54 @@ def format_llms_full_text(website_url, site_description, full_content_sections):
     
     llms_full_text = f"# {domain_name} llms-full.txt\n\n"
     llms_full_text += f"Website Description: {site_description}\n\n"
-    llms_full_text += "--- Start Full Website Content ---\n\n"
     
-    # Sort by title for consistent output
-    sorted_sections = sorted(full_content_sections, key=lambda x: x.get("title", "").lower())
+    # Add successful pages section
+    if successful_sections:
+        llms_full_text += "--- Start Successfully Processed Pages ---\n\n"
+        
+        # Sort by title for consistent output
+        sorted_successful = sorted(successful_sections, key=lambda x: x.get("title", "").lower())
+        
+        for section in sorted_successful:
+            title = section.get("title", "No Title Available")
+            url = section.get("url", "No URL Available")
+            content = section.get("content", "No content extracted for this page.")
+            
+            llms_full_text += f"## Page Title: {title}\n"
+            llms_full_text += f"URL: {url}\n\n"
+            llms_full_text += f"{content}\n\n"
+            llms_full_text += "---\n\n"  # Use a clear separator between pages
+        
+        llms_full_text += "--- End Successfully Processed Pages ---\n\n"
     
-    for section in sorted_sections:
-        title = section.get("title", "No Title Available")
-        url = section.get("url", "No URL Available")
-        content = section.get("content", "No content extracted for this page.")
+    # Add failed pages section
+    if failed_sections:
+        llms_full_text += "--- Start Failed Pages ---\n\n"
         
-        llms_full_text += f"## Page Title: {title}\n"
-        llms_full_text += f"URL: {url}\n\n"
-        llms_full_text += f"{content}\n\n"
-        llms_full_text += "---\n\n"  # Use a clear separator between pages
+        # Sort by title for consistent output
+        sorted_failed = sorted(failed_sections, key=lambda x: x.get("title", "").lower())
         
-    llms_full_text += "--- End Full Website Content ---\n"
+        for section in sorted_failed:
+            title = section.get("title", "No Title Available")
+            url = section.get("url", "No URL Available")
+            error = section.get("error", "Unknown error occurred.")
+            
+            llms_full_text += f"## Page Title: {title}\n"
+            llms_full_text += f"URL: {url}\n"
+            llms_full_text += f"Error: {error}\n\n"
+            llms_full_text += "---\n\n"
+        
+        llms_full_text += "--- End Failed Pages ---\n\n"
+    
+    # Add summary statistics
+    total_pages = len(successful_sections) + len(failed_sections)
+    success_rate = (len(successful_sections) / total_pages * 100) if total_pages > 0 else 0
+    
+    llms_full_text += f"## Summary\n"
+    llms_full_text += f"- Total pages discovered: {total_pages}\n"
+    llms_full_text += f"- Successfully processed: {len(successful_sections)}\n"
+    llms_full_text += f"- Failed to process: {len(failed_sections)}\n"
+    llms_full_text += f"- Success rate: {success_rate:.1f}%\n"
     
     return llms_full_text
 
@@ -1265,39 +1388,42 @@ def generate_llm_text():
 
         if output_type == 'llms_txt':
             logger.info("Generating LLM Text (summarized)")
-            summarized_links = []
+            successful_links = []
+            failed_links = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
                 future_to_link = {executor.submit(get_page_summary, link["url"], link["description"]): link for link in valid_links}
                 for i, future in enumerate(concurrent.futures.as_completed(future_to_link)):
                     link = future_to_link[future]
                     try:
                         summary = future.result()
-                        summarized_links.append({
+                        successful_links.append({
                             "summary": summary,
                             "url": link["url"],
                             "title": link["description"]
                         })
                     except Exception as exc:
                         logger.error(f"Error processing link {link['url']}: {str(exc)}")
-                        summarized_links.append({
-                            "summary": f"Error processing: {link['url']}",
+                        failed_links.append({
                             "url": link["url"],
-                            "title": link["description"]
+                            "title": link["description"],
+                            "error": str(exc)
                         })
             
             logger.info("Formatting llms.txt content")
-            llms_text = format_llms_text(website_url, site_description, summarized_links)
+            llms_text = format_llms_text(website_url, site_description, successful_links, failed_links)
             
             logger.info("Successfully generated llms.txt content")
             return jsonify({
                 "llms_text": llms_text,
                 "site_description": site_description,
-                "summarized_links": summarized_links
+                "successful_links": successful_links,
+                "failed_links": failed_links
             })
 
         elif output_type == 'llms_full_txt':
             logger.info("Generating LLM Full Text (full content)")
-            full_content_sections = []
+            successful_sections = []
+            failed_sections = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
                 # Use partial to pass fetch_page_and_extract_full_content for each link
                 fetch_and_extract_func = partial(fetch_page_and_extract_full_content)  # This new function must be defined below
@@ -1307,27 +1433,92 @@ def generate_llm_text():
                     link = future_to_link[future]
                     try:
                         page_full_content = future.result()
-                        full_content_sections.append({
+                        successful_sections.append({
                             "title": link["description"],
                             "url": link["url"],
                             "content": page_full_content
                         })
                     except Exception as exc:
                         logger.error(f"Error processing full content for link {link['url']}: {str(exc)}")
-                        full_content_sections.append({
+                        failed_sections.append({
                             "title": link["description"],
                             "url": link["url"],
-                            "content": f"Error fetching or extracting content for {link['url']}: {str(exc)}"
+                            "error": str(exc)
                         })
             
             logger.info("Formatting llms-full.txt content")
-            llms_full_text_output = format_llms_full_text(website_url, site_description, full_content_sections)  # This new function must be defined below
+            llms_full_text_output = format_llms_full_text(website_url, site_description, successful_sections, failed_sections)  # This new function must be defined below
             
             logger.info("Successfully generated llms-full.txt content")
             return jsonify({
                 "llms_full_text": llms_full_text_output,
                 "site_description": site_description,
-                "full_content_sections": full_content_sections
+                "successful_sections": successful_sections,
+                "failed_sections": failed_sections
+            })
+
+        elif output_type == 'llms_both':
+            logger.info("Generating both LLM Text and Full Text")
+            
+            # Generate summarized content
+            successful_summary_links = []
+            failed_summary_links = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
+                future_to_link = {executor.submit(get_page_summary, link["url"], link["description"]): link for link in valid_links}
+                for i, future in enumerate(concurrent.futures.as_completed(future_to_link)):
+                    link = future_to_link[future]
+                    try:
+                        summary = future.result()
+                        successful_summary_links.append({
+                            "summary": summary,
+                            "url": link["url"],
+                            "title": link["description"]
+                        })
+                    except Exception as exc:
+                        logger.error(f"Error processing link {link['url']}: {str(exc)}")
+                        failed_summary_links.append({
+                            "url": link["url"],
+                            "title": link["description"],
+                            "error": str(exc)
+                        })
+            
+            # Generate full content
+            successful_full_sections = []
+            failed_full_sections = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
+                fetch_and_extract_func = partial(fetch_page_and_extract_full_content)
+                future_to_link = {executor.submit(fetch_and_extract_func, link["url"], link["description"]): link for link in valid_links}
+
+                for i, future in enumerate(concurrent.futures.as_completed(future_to_link)):
+                    link = future_to_link[future]
+                    try:
+                        page_full_content = future.result()
+                        successful_full_sections.append({
+                            "title": link["description"],
+                            "url": link["url"],
+                            "content": page_full_content
+                        })
+                    except Exception as exc:
+                        logger.error(f"Error processing full content for link {link['url']}: {str(exc)}")
+                        failed_full_sections.append({
+                            "title": link["description"],
+                            "url": link["url"],
+                            "error": str(exc)
+                        })
+            
+            logger.info("Formatting both llms.txt and llms-full.txt content")
+            llms_text = format_llms_text(website_url, site_description, successful_summary_links, failed_summary_links)
+            llms_full_text_output = format_llms_full_text(website_url, site_description, successful_full_sections, failed_full_sections)
+            
+            logger.info("Successfully generated both content types")
+            return jsonify({
+                "llms_text": llms_text,
+                "llms_full_text": llms_full_text_output,
+                "site_description": site_description,
+                "successful_summary_links": successful_summary_links,
+                "failed_summary_links": failed_summary_links,
+                "successful_full_sections": successful_full_sections,
+                "failed_full_sections": failed_full_sections
             })
 
         else:
