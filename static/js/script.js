@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusMessage = document.getElementById('statusMessage');
     const copyBtn = document.getElementById('copyBtn');
     const downloadBtn = document.getElementById('downloadBtn');
+    const clearBtn = document.getElementById('clearBtn');
     const copyMessage = document.getElementById('copyMessage');
     const processingOverlay = document.getElementById('processingOverlay');
     const processingDetail = document.getElementById('processingDetail');
@@ -230,6 +231,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        // Get the selected output type to determine filename
+        const selectedOutputType = document.querySelector('input[name="outputType"]:checked').value;
+        
+        // Set filename based on output type
+        let filename = 'llms.txt'; // default
+        if (selectedOutputType === 'llms_full_txt') {
+            filename = 'llms-full.txt';
+        }
+        
         // Create a blob with the text content
         const blob = new Blob([outputText.value], { type: 'text/plain' });
         
@@ -239,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Create a temporary anchor element to trigger download
         const downloadLink = document.createElement('a');
         downloadLink.href = url;
-        downloadLink.download = 'llms.txt'; // Set the filename
+        downloadLink.download = filename; // Set the dynamic filename
         
         // Append to body, click, and remove
         document.body.appendChild(downloadLink);
@@ -248,6 +258,30 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Clean up the URL object
         window.URL.revokeObjectURL(url);
+    });
+    
+    // Implement clear functionality
+    clearBtn.addEventListener('click', () => {
+        // Clear the URL input
+        websiteUrlInput.value = '';
+        
+        // Clear the output text
+        outputText.value = '';
+        
+        // Clear status message
+        statusMessage.textContent = '';
+        statusMessage.className = '';
+        
+        // Hide copy and download buttons
+        copyBtn.style.display = 'none';
+        downloadBtn.style.display = 'none';
+        copyMessage.style.display = 'none';
+        
+        // Reset to default output type (summarized)
+        llmsTxtRadio.checked = true;
+        
+        // Focus back to the URL input for better UX
+        websiteUrlInput.focus();
     });
     
     function showCopySuccess() {

@@ -261,7 +261,7 @@ h1 {
     box-shadow: var(--shadow-md);
 }
 
-#generateBtn:hover:not(:disabled) {
+#generateBtn:hover:not(:disabled):not(.processing) {
     transform: translateY(-1px);
     box-shadow: var(--shadow-lg);
 }
@@ -274,6 +274,13 @@ h1 {
 /* Processing button styles */
 #generateBtn.processing {
     padding-left: var(--space-12);
+    transform: none !important;
+    box-shadow: var(--shadow-md) !important;
+}
+
+#generateBtn.processing:hover {
+    transform: none !important;
+    box-shadow: var(--shadow-md) !important;
 }
 
 #generateBtn.processing::before {
@@ -287,10 +294,16 @@ h1 {
     border: 3px solid rgba(255, 255, 255, 0.3);
     border-radius: 50%;
     border-top-color: white;
-    animation: spin 1s linear infinite;
+    animation: spin-button 1s linear infinite;
 }
 
 @keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes spin-button {
     to {
         transform: translateY(-50%) rotate(360deg);
     }
