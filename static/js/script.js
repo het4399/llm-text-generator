@@ -14,6 +14,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const llmsFullTxtRadio = document.getElementById('llmsFullTxt');
     const llmsBothRadio = document.getElementById('llmsBoth');
 
+    // Global variables to track animation state
+    let currentProgressAnimation = null;
+    let currentProcessingState = false;
+
     // Function to validate URL
     function isValidUrl(string) {
         try {
@@ -26,9 +30,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // Function to clear any existing progress animation
+    function clearProgressAnimation() {
+        if (currentProgressAnimation) {
+            clearInterval(currentProgressAnimation);
+            currentProgressAnimation = null;
+        }
+        // Also clear the legacy window.progressAnimation if it exists
+        if (window.progressAnimation) {
+            clearInterval(window.progressAnimation);
+            window.progressAnimation = null;
+        }
+    }
+    
     // Function to update processing state and UI
     function setProcessingState(isProcessing, detail = null) {
+        // Prevent multiple simultaneous processing states
+        if (currentProcessingState === isProcessing) {
+            return;
+        }
+        
+        currentProcessingState = isProcessing;
+        
         if (isProcessing) {
+            // Clear any existing progress animation first
+            clearProgressAnimation();
+            
             // Disable button and change text
             generateBtn.disabled = true;
             generateBtn.textContent = 'Processing...';
@@ -59,9 +86,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Start progress animation
             startProgressAnimation();
         } else {
+            // Clear any existing progress animation
+            clearProgressAnimation();
+            
             // Reset button state
             generateBtn.disabled = false;
-            generateBtn.textContent = 'Generate LLM Text';
+            generateBtn.textContent = 'Generate LLMs Txt';
             generateBtn.classList.remove('processing');
             
             // Hide processing overlay
@@ -74,6 +104,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Function to animate the progress bar
     function startProgressAnimation() {
+        // Clear any existing animation first
+        clearProgressAnimation();
+        
         // Reset progress
         progressBar.style.width = '0%';
         
@@ -85,25 +118,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const interval = 200; // Update every 200ms
         const increment = (maxWidth * interval) / duration;
         
-        const animation = setInterval(() => {
+        currentProgressAnimation = setInterval(() => {
             if (width >= maxWidth) {
-                clearInterval(animation);
+                clearProgressAnimation();
             } else {
                 width += increment;
                 progressBar.style.width = `${width}%`;
             }
         }, interval);
         
-        // Store the interval ID to clear it later if needed
-        window.progressAnimation = animation;
+        // Also store in window for backward compatibility
+        window.progressAnimation = currentProgressAnimation;
     }
     
     // Function to complete the progress animation
     function completeProgressAnimation() {
         // Clear any existing animation
-        if (window.progressAnimation) {
-            clearInterval(window.progressAnimation);
-        }
+        clearProgressAnimation();
         
         // Animate to 100%
         progressBar.style.width = '100%';
@@ -142,15 +173,21 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // Update processing detail after a delay to simulate progress
             setTimeout(() => {
-                processingDetail.textContent = 'Analyzing website structure...';
+                if (currentProcessingState) { // Only update if still processing
+                    processingDetail.textContent = 'Analyzing website structure...';
+                }
             }, 3000);
             
             setTimeout(() => {
-                processingDetail.textContent = 'Extracting internal links...';
+                if (currentProcessingState) { // Only update if still processing
+                    processingDetail.textContent = 'Extracting internal links...';
+                }
             }, 6000);
             
             setTimeout(() => {
-                processingDetail.textContent = 'Generating summaries (this may take a while)...';
+                if (currentProcessingState) { // Only update if still processing
+                    processingDetail.textContent = 'Generating summaries (this may take a while)...';
+                }
             }, 9000);
 
             // Send request to backend
@@ -271,6 +308,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Implement clear functionality
     clearBtn.addEventListener('click', () => {
+        // Clear any existing progress animation
+        clearProgressAnimation();
+        
+        // Reset processing state
+        currentProcessingState = false;
+        
         // Clear the URL input
         websiteUrlInput.value = '';
         
@@ -311,4 +354,21 @@ document.addEventListener('DOMContentLoaded', () => {
             copyMessage.style.display = 'none';
         }, 3000);
     }
+    
+    // Cleanup function to handle page unload
+    window.addEventListener('beforeunload', () => {
+        clearProgressAnimation();
+    });
+    
+    // Also cleanup on page visibility change (when user switches tabs)
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            // Page is hidden, we could pause animations here if needed
+        } else {
+            // Page is visible again, ensure animations are in sync
+            if (!currentProcessingState) {
+                clearProgressAnimation();
+            }
+        }
+    });
 }); 

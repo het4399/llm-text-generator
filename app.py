@@ -316,13 +316,17 @@ def convert_html_to_markdown(html_content):
     # Convert common HTML elements to Markdown
     markdown = html_content
     
-    # Headers
-    markdown = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1', markdown, flags=re.IGNORECASE | re.DOTALL)
-    markdown = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1', markdown, flags=re.IGNORECASE | re.DOTALL)
-    markdown = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1', markdown, flags=re.IGNORECASE | re.DOTALL)
-    markdown = re.sub(r'<h4[^>]*>(.*?)</h4>', r'#### \1', markdown, flags=re.IGNORECASE | re.DOTALL)
-    markdown = re.sub(r'<h5[^>]*>(.*?)</h5>', r'##### \1', markdown, flags=re.IGNORECASE | re.DOTALL)
-    markdown = re.sub(r'<h6[^>]*>(.*?)</h6>', r'###### \1', markdown, flags=re.IGNORECASE | re.DOTALL)
+    # Headers (with proper spacing and content cleaning)
+    for i in range(1, 7):
+        header_tag = f'h{i}'
+        header_mark = '#' * i
+        # Convert header tags to markdown with proper spacing
+        markdown = re.sub(
+            rf'<{header_tag}[^>]*>(.*?)</{header_tag}>', 
+            rf'\n\n{header_mark} \1\n\n', 
+            markdown, 
+            flags=re.IGNORECASE | re.DOTALL
+        )
     
     # Bold and italic
     markdown = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', markdown, flags=re.IGNORECASE | re.DOTALL)
@@ -350,6 +354,14 @@ def convert_html_to_markdown(html_content):
     
     # Remove remaining HTML tags
     markdown = re.sub(r'<[^>]+>', '', markdown)
+    
+    # Fix HTML entities
+    markdown = markdown.replace('&nbsp;', ' ')
+    markdown = markdown.replace('&amp;', '&')
+    markdown = markdown.replace('&lt;', '<')
+    markdown = markdown.replace('&gt;', '>')
+    markdown = markdown.replace('&quot;', '"')
+    markdown = markdown.replace('&#39;', "'")
     
     # Clean up extra whitespace
     markdown = re.sub(r'\n\s*\n\s*\n', '\n\n', markdown)
@@ -454,23 +466,197 @@ def extract_main_content_with_markdown(soup):
     main_content = validate_and_fix_encoding(main_content)
     main_content = clean_text(main_content)
     
+    # Fix HTML entities
+    main_content = main_content.replace('&amp;', '&')
+    main_content = main_content.replace('&lt;', '<')
+    main_content = main_content.replace('&gt;', '>')
+    main_content = main_content.replace('&quot;', '"')
+    main_content = main_content.replace('&#39;', "'")
+    main_content = main_content.replace('&nbsp;', ' ')
+    
+    # Remove duplicate content (common issue with FAQ sections)
+    lines = main_content.split('\n')
+    unique_lines = []
+    seen_content = set()
+    
+    for line in lines:
+        # Clean the line for comparison
+        clean_line = re.sub(r'\s+', ' ', line.strip())
+        if clean_line and len(clean_line) > 10:  # Only check substantial lines
+            if clean_line not in seen_content:
+                unique_lines.append(line)
+                seen_content.add(clean_line)
+        else:
+            unique_lines.append(line)  # Keep empty lines and short lines
+    
+    main_content = '\n'.join(unique_lines)
+    
     # Limit content length
-    if len(main_content) > 4000:
-        cut_point = 3950
-        while cut_point < 4000 and cut_point < len(main_content):
+    if len(main_content) > 8000:  # Increased from 4000 to 8000 for full mode
+        cut_point = 7950  # Increased from 3950 to 7950
+        while cut_point < 8000 and cut_point < len(main_content):
             if main_content[cut_point] in ['.', '!', '?'] and (cut_point + 1 >= len(main_content) or main_content[cut_point + 1] == ' '):
                 cut_point += 1
                 break
             cut_point += 1
         
-        if cut_point >= 4000:
-            cut_point = 3990
-            while cut_point > 3900 and cut_point < len(main_content):
+        if cut_point >= 8000:
+            cut_point = 7990  # Increased from 3990 to 7990
+            while cut_point > 7950 and cut_point < len(main_content):
                 if main_content[cut_point] == ' ':
                     break
                 cut_point -= 1
                 
         main_content = main_content[:cut_point].strip()
+        
+        # Add ellipsis if content was cut
+        if cut_point < len(main_content):
+            main_content += "..."
+    
+    # Improve structure preservation - ULTRA ROBUST FIX
+    # First, remove excessive newlines
+    main_content = re.sub(r'\n{3,}', '\n\n', main_content)
+    
+    # STEP 1: Fix broken headers that are split across lines (like "## The" followed by "Founder's Touch")
+    main_content = re.sub(r'(#+\s+[A-Z][a-z]*)\n+([A-Z][a-z][^#\n]*?)(?=\n|$)', r'\1 \2', main_content)
+    
+    # STEP 2: Fix headers that are concatenated with content (like "### The Meeting of Minds Yogreet Global")
+    main_content = re.sub(r'(#+\s+[^#\n]+?)([A-Z][a-z][^#\n]*?)(?=\n|$)', r'\1\n\n\2', main_content)
+    
+    # STEP 2.5: Fix headers concatenated with content (like "## 15 Zuora Competitors to Streamline Subscription ManagementThat said")
+    main_content = re.sub(r'(#+\s+[^#\n]+?)([A-Z][a-z][^#\n]*?)([A-Z][a-z][^#\n]*?)(?=\n|$)', r'\1\n\n\2\3', main_content)
+    
+    # STEP 3: Fix concatenated headers (like "## Our Vision ### Simplifying Success")
+    main_content = re.sub(r'(#+\s+[^#\n]+?)\s+(#+\s+[^#\n]+)', r'\1\n\n\2', main_content)
+    
+    # STEP 4: Fix headers that are concatenated without spaces (like "## Our Vision### Simplifying Success")
+    main_content = re.sub(r'(#+\s+[^#\n]+?)(#+\s+[^#\n]+)', r'\1\n\n\2', main_content)
+    
+    # STEP 5: Fix headers with arrows or special characters
+    main_content = re.sub(r'(#+\s+[^#\n]+?)\s*-->\s*', r'\1\n\n', main_content)
+    main_content = re.sub(r'(#+\s+[^#\n]+?)\s*->\s*', r'\1\n\n', main_content)
+    main_content = re.sub(r'(#+\s+[^#\n]+?)\s*→\s*', r'\1\n\n', main_content)
+    
+    # STEP 6: Ensure proper spacing around headers
+    main_content = re.sub(r'([^#\n])\n(#+\s)', r'\1\n\n\2', main_content)  # Add space before headers
+    main_content = re.sub(r'(#+\s.*?)\n([^#\n])', r'\1\n\n\2', main_content)  # Add space after headers
+    
+    # STEP 7: Add breaks after sentences that start with capital letters (likely new sections)
+    main_content = re.sub(r'([.!?])\s+([A-Z][a-z]+[^.!?]*?\.)', r'\1\n\n\2', main_content)
+    
+    # STEP 8: Ensure proper spacing around links
+    main_content = re.sub(r'([^[])\n(\[.*?\])', r'\1\n\n\2', main_content)
+    
+    # STEP 8.5: Fix bold text running into content (like "**Pricing** Once the free")
+    main_content = re.sub(r'(\*\*[^*]+\*\*)([A-Z][a-z])', r'\1\n\n\2', main_content)
+    main_content = re.sub(r'(\*\*[^*]+\*\*)(\s+)([A-Z][a-z])', r'\1\n\n\3', main_content)
+    
+    # STEP 9: Remove duplicate content (ULTRA AGGRESSIVE)
+    lines = main_content.split('\n')
+    unique_lines = []
+    seen_content = set()
+    seen_headers = set()
+    
+    for line in lines:
+        # Clean the line for comparison
+        clean_line = re.sub(r'\s+', ' ', line.strip())
+        
+        # Check if it's a header
+        if re.match(r'^#+\s+', line.strip()):
+            header_text = re.sub(r'^#+\s+', '', clean_line)
+            if header_text and len(header_text) > 3:
+                if header_text not in seen_headers:
+                    unique_lines.append(line)
+                    seen_headers.add(header_text)
+                else:
+                    # Skip duplicate headers
+                    continue
+        elif clean_line and len(clean_line) > 20:  # Only check substantial lines
+            if clean_line not in seen_content:
+                unique_lines.append(line)
+                seen_content.add(clean_line)
+        else:
+            unique_lines.append(line)  # Keep empty lines and short lines
+    
+    main_content = '\n'.join(unique_lines)
+    
+    # STEP 10: Remove empty headers (headers with no content)
+    lines = main_content.split('\n')
+    filtered_lines = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # If this is a header
+        if re.match(r'^#+\s+', line.strip()):
+            # Look ahead to see if there's content after this header
+            has_content = False
+            j = i + 1
+            while j < len(lines) and j < i + 5:  # Check next 5 lines
+                next_line = lines[j].strip()
+                if next_line and not re.match(r'^#+\s+', next_line):
+                    has_content = True
+                    break
+                j += 1
+            
+            if has_content:
+                filtered_lines.append(line)
+            # If no content found, skip this header
+        else:
+            filtered_lines.append(line)
+        i += 1
+    
+    main_content = '\n'.join(filtered_lines)
+    
+    # STEP 11: Final cleanup of excessive whitespace
+    main_content = re.sub(r' +', ' ', main_content)  # Remove multiple spaces
+    main_content = re.sub(r'\n\s*\n\s*\n', '\n\n', main_content)  # Remove excessive newlines
+    
+    # STEP 12: Final header cleanup - ensure all headers have proper spacing
+    # Fix any remaining concatenated headers
+    main_content = re.sub(r'(#+\s+[^#\n]+?)([A-Z][a-z][^#\n]*?)(#+\s+)', r'\1\n\n\2\n\n\3', main_content)
+    
+    # Ensure headers are properly separated from content
+    main_content = re.sub(r'(#+\s+[^#\n]+?)\n([^#\n])', r'\1\n\n\2', main_content)
+    
+    # STEP 13: Fix specific patterns from the example
+    # Fix "## 15 Zuora Competitors to Streamline Subscription ManagementThat said"
+    main_content = re.sub(r'(#+\s+[^#\n]+?)([A-Z][a-z][^#\n]*?)([A-Z][a-z][^#\n]*?)([A-Z][a-z][^#\n]*?)(?=\n|$)', r'\1\n\n\2\3\4', main_content)
+    
+    # Fix "**Pricing** Once the free 14-day trial ends"
+    main_content = re.sub(r'(\*\*[^*]+\*\*)(\s+)([A-Z][a-z][^.!?]*?)(?=\n|$)', r'\1\n\n\3', main_content)
+    
+    # Fix "**Tool Level** - Beginner"
+    main_content = re.sub(r'(\*\*[^*]+\*\*)(\s*-\s*)([A-Z][a-z]+)', r'\1\n\n\2\3', main_content)
+    
+    # STEP 14: Fix broken headers (generic pattern for any header split across lines)
+    # This handles cases where headers are broken across multiple lines
+    main_content = re.sub(r'(#+\s+[A-Z][a-z][^#\n]*?)\n+([A-Z][a-z][^#\n]*?)(?=\n|$)', r'\1 \2', main_content)
+    
+    # STEP 15: Fix any remaining broken headers with more generic pattern
+    # Handle cases where headers might be split with any text pattern
+    main_content = re.sub(r'(#+\s+[A-Z][a-z][^#\n]*?)\n+([A-Z][a-z][^#\n]*?)(?=\n|$)', r'\1 \2', main_content)
+    
+    # STEP 16: Final cleanup - ensure headers don't have excessive spacing
+    main_content = re.sub(r'(#+\s+[^#\n]+?)\s*\n\s*\n\s*([A-Z][a-z][^#\n]*?)(?=\n|$)', r'\1 \2', main_content)
+    
+    # STEP 17: Comprehensive content structure cleanup (ULTRA GENERIC)
+    # Fix any content that got broken during processing
+    
+    # Remove excessive newlines between content
+    main_content = re.sub(r'\n{4,}', '\n\n', main_content)
+    
+    # Fix any remaining broken sentence structures
+    main_content = re.sub(r'([.!?])\s*\n\s*([A-Z][a-z])', r'\1 \2', main_content)
+    
+    # Fix any remaining broken word structures
+    main_content = re.sub(r'([a-z])\s*\n\s*([a-z])', r'\1\2', main_content)
+    
+    # Fix any remaining broken header structures (catch-all)
+    main_content = re.sub(r'(#+\s+[^#\n]*?)\s*\n\s*([A-Z][a-z][^#\n]*?)(?=\n|$)', r'\1 \2', main_content)
+    
+    # Final whitespace normalization
+    main_content = re.sub(r' +', ' ', main_content)
+    main_content = re.sub(r'\n\s*\n\s*\n', '\n\n', main_content)
     
     return main_content
 
@@ -1421,10 +1607,12 @@ def extract_internal_links(soup, website_url):
         logger.info(f"Sample sitemap URLs: {sitemap_urls[:5]}")
         logger.info(f"Total sitemap URLs to process: {len(sitemap_urls)}")
     
-    # Add sitemap URLs to our list (excluding images)
+    # Add sitemap URLs to our list (including ALL URLs for now)
     for sitemap_url in sitemap_urls:
-        # Skip image URLs as they're not content pages
-        if any(ext in sitemap_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico']):
+        # TEMPORARILY INCLUDE ALL URLs to see what we're missing
+        # Skip only obvious image files, not URLs that might contain image extensions
+        if sitemap_url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico')):
+            logger.info(f"Skipping obvious image file: {sitemap_url}")
             continue
             
         if sitemap_url not in unique_urls:
@@ -1466,12 +1654,12 @@ def extract_internal_links(soup, website_url):
             "url": full_url
         })
     
-    # Count filtered sitemap URLs
-    filtered_sitemap_urls = [url for url in sitemap_urls if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico'])]
-    content_sitemap_urls = [url for url in sitemap_urls if not any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico'])]
+    # Count filtered sitemap URLs (updated logic)
+    filtered_sitemap_urls = [url for url in sitemap_urls if url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico'))]
+    content_sitemap_urls = [url for url in sitemap_urls if not url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico'))]
     
     logger.info(f"Total internal links found: {len(internal_links)} (HTML: {len(internal_links) - len(content_sitemap_urls)}, Sitemap: {len(content_sitemap_urls)})")
-    logger.info(f"Sitemap filtering: {len(sitemap_urls)} total URLs, {len(filtered_sitemap_urls)} images filtered out, {len(content_sitemap_urls)} content URLs kept")
+    logger.info(f"Sitemap filtering: {len(sitemap_urls)} total URLs, {len(filtered_sitemap_urls)} obvious images filtered out, {len(content_sitemap_urls)} content URLs kept")
     
     # Log detailed breakdown
     content_urls = [link for link in internal_links if any(path in link['url'] for path in ['/blog/', '/article/', '/post/', '/news/', '/content/'])]
@@ -1967,11 +2155,19 @@ def generate_llm_text():
 
         site_description = extract_site_description(soup, website_url)
         internal_links = extract_internal_links(soup, website_url)
-        valid_links = [
+        # TEMPORARILY REMOVE FILTERING TO CAPTURE ALL PAGES
+        # This will help us see what pages are being filtered out
+        valid_links = internal_links  # Process ALL discovered links
+        
+        # Log what would have been filtered out for debugging
+        filtered_out_links = [
             link for link in internal_links
-            if not is_generic_utility_url(urlparse(link['url']).path) and
-               not is_generic_link_text(link['description'])
+            if is_generic_utility_url(urlparse(link['url']).path) or
+               is_generic_link_text(link['description'])
         ]
+        logger.info(f"Would have filtered out {len(filtered_out_links)} links")
+        if filtered_out_links:
+            logger.info(f"Sample filtered out links: {filtered_out_links[:5]}")
         logger.info(f"Found {len(valid_links)} valid internal links after filtering.")
         
         # Log detailed breakdown of valid links
