@@ -16,6 +16,7 @@ from functools import partial
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 import json
+from markdownify import markdownify
 
 # Configure logging
 logging.basicConfig(
@@ -300,9 +301,74 @@ def validate_and_fix_encoding(text):
     
     return text
 
+
 def convert_html_to_markdown(html_content):
     """
-    Convert HTML content to Markdown format while preserving structure.
+    Convert HTML content to Markdown format using markdownify library
+    with post-processing improvements (spacing, dedupe, links, tables).
+    """
+    if not html_content:
+        return ""
+
+    try:
+        markdown = markdownify(
+            html_content,
+            heading_style="ATX",   # Use # headers
+            bullets="*",           # Consistent list style
+            strip="all",           # Remove unwanted tags completely
+            wrap=False,            # Don’t auto-wrap lines
+            strong_em_symbol="*",  # Use * for bold/italic
+            autolinks=True         # Convert plain URLs into links
+        )
+
+        # --- Post-processing cleanup ---
+        # 1. Normalize excessive blank lines
+        markdown = re.sub(r'\n\s*\n\s*\n+', '\n\n', markdown)
+
+        # 2. Deduplicate repeated consecutive paragraphs
+        lines, seen = [], set()
+        for line in markdown.splitlines():
+            clean = line.strip()
+            if clean and clean not in seen:
+                lines.append(line)
+                seen.add(clean)
+            elif not clean:  # keep empty lines
+                lines.append(line)
+        markdown = "\n".join(lines)
+
+        # 3. Convert emails into Markdown links
+        markdown = re.sub(
+            r'([\w\.-]+@[\w\.-]+\.\w+)',
+            r'[\1](mailto:\1)',
+            markdown
+        )
+
+        # 4. Convert phone numbers into tel: links
+        markdown = re.sub(
+            r'(?<!\d)(\+?\d[\d\-\s]{7,}\d)(?!\d)',
+            r'[\1](tel:\1)',
+            markdown
+        )
+
+        # 5. Optional: collapse trailing spaces/newlines
+        markdown = markdown.strip()
+
+        return markdown
+
+    except Exception as e:
+        return f"Error converting HTML to Markdown: {e}"
+
+
+    # except ImportError:
+    #     logger.warning("markdownify not available, using fallback converter")
+    #     return fallback_convert_html_to_markdown(html_content)
+    # except Exception as e:
+    #     logger.error(f"Error in markdownify conversion: {str(e)}, using fallback")
+    #     return fallback_convert_html_to_markdown(html_content)
+
+def fallback_convert_html_to_markdown(html_content):
+    """
+    Fallback HTML to Markdown converter using regex (original implementation).
     
     Args:
         html_content (str): HTML content to convert
@@ -371,7 +437,48 @@ def convert_html_to_markdown(html_content):
 
 def convert_inline_markdown(text):
     """
-    Convert inline HTML formatting to Markdown.
+    Convert inline HTML formatting to Markdown using markdownify.
+    
+    Args:
+        text (str): Text with inline HTML
+        
+    Returns:
+        str: Text with Markdown formatting
+    """
+    if not text:
+        return text
+    
+    try:
+        from markdownify import markdownify
+        
+        # Convert inline HTML to Markdown with minimal processing
+        markdown = markdownify(
+            text,
+            heading_style="ATX",
+            bullets="-",
+            strip=['script', 'style'],  # Only remove scripts and styles
+            code_language='',
+            strong_em_symbol='*',
+            wrap=False,
+            autolinks=True,
+            default_title=True,
+            escape_asterisks=True
+        )
+        
+        return markdown.strip()
+        
+    except ImportError:
+        # Fallback to custom implementation if markdownify is not available
+        logger.warning("markdownify not available, using fallback inline converter")
+        return fallback_convert_inline_markdown(text)
+    except Exception as e:
+        # Fallback to custom implementation on any error
+        logger.error(f"Error in markdownify inline conversion: {str(e)}, using fallback")
+        return fallback_convert_inline_markdown(text)
+
+def fallback_convert_inline_markdown(text):
+    """
+    Fallback inline HTML to Markdown converter using regex.
     
     Args:
         text (str): Text with inline HTML
