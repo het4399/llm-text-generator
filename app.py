@@ -2743,5 +2743,5 @@ def get_sitemap_urls(website_url):
     return []
 
 if __name__ == '__main__':
-    logger.info("Starting LLM Text Generator application")
-    app.run(debug=True) 
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
