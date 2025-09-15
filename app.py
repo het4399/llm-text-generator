@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, make_response
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -111,58 +111,85 @@ def bad_request(error):
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 Not Found errors."""
-    return jsonify({
+    resp = jsonify({
         "error": "Not Found",
         "message": "The requested resource was not found.",
         "status_code": 404
-    }), 404
+    })
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive, nosnippet, noimageindex'
+    return resp, 404
 
 @app.errorhandler(405)
 def method_not_allowed(error):
     """Handle 405 Method Not Allowed errors."""
-    return jsonify({
+    resp = jsonify({
         "error": "Method Not Allowed",
         "message": "The HTTP method is not allowed for this endpoint.",
         "status_code": 405
-    }), 405
+    })
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive, nosnippet, noimageindex'
+    return resp, 405
 
 @app.errorhandler(429)
 def too_many_requests(error):
     """Handle 429 Too Many Requests errors."""
-    return jsonify({
+    resp = jsonify({
         "error": "Too Many Requests",
         "message": "Rate limit exceeded. Please try again later.",
         "status_code": 429
-    }), 429
+    })
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive, nosnippet, noimageindex'
+    return resp, 429
 
 @app.errorhandler(500)
 def internal_error(error):
     """Handle 500 Internal Server Error."""
     logger.error(f"Internal server error: {str(error)}")
-    return jsonify({
+    resp = jsonify({
         "error": "Internal Server Error",
         "message": "An unexpected error occurred. Please try again later.",
         "status_code": 500
-    }), 500
+    })
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive, nosnippet, noimageindex'
+    return resp, 500
 
 @app.errorhandler(503)
 def service_unavailable(error):
     """Handle 503 Service Unavailable errors."""
-    return jsonify({
+    resp = jsonify({
         "error": "Service Unavailable",
         "message": "The service is temporarily unavailable. Please try again later.",
         "status_code": 503
-    }), 503
+    })
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive, nosnippet, noimageindex'
+    return resp, 503
 
 @app.errorhandler(Exception)
 def handle_exception(error):
     """Handle any unhandled exceptions."""
     logger.error(f"Unhandled exception: {str(error)}", exc_info=True)
-    return jsonify({
+    resp = jsonify({
         "error": "Internal Server Error",
         "message": "An unexpected error occurred. Please try again later.",
         "status_code": 500
-    }), 500
+    })
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive, nosnippet, noimageindex'
+    return resp, 500
+
+# Set X-Robots-Tag for all responses
+@app.after_request
+def add_x_robots_tag(response):
+    response.headers.setdefault('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex')
+    return response
+
+# Robots.txt route
+@app.route('/robots.txt')
+def robots_txt():
+    content = "User-agent: *\nDisallow: /\n"
+    resp = make_response(content, 200)
+    resp.headers['Content-Type'] = 'text/plain'
+    resp.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive, nosnippet, noimageindex'
+    return resp
 
 def validate_url(url):
     """

@@ -232,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         font-size: 14px;
                         line-height: 1.6;
                         margin: 0;
-                        padding: 20px;
+                        padding: 0;
                         background: #f9fafb;
                         color: #374151;
                         white-space: pre-wrap;
@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     .content {
                         background: white;
-                        padding: 20px;
+                        padding: 10px;
                         border-radius: 8px;
                         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
                         max-width: 100%;
