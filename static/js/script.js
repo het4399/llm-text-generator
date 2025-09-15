@@ -11,9 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const processingOverlay = document.getElementById('processingOverlay');
     const processingDetail = document.getElementById('processingDetail');
     const progressBar = document.getElementById('progressBar');
-    const llmsTxtRadio = document.getElementById('llmsTxt');
-    const llmsFullTxtRadio = document.getElementById('llmsFullTxt');
-    const llmsBothRadio = document.getElementById('llmsBoth');
+    // Toggle buttons for output type selection
+    const toggleButtons = document.querySelectorAll('.toggle-btn');
     const userDetailsModal = document.getElementById('userDetailsModal');
     const otpModal = document.getElementById('otpModal');
     const modalCloseBtn = document.getElementById('modalCloseBtn');
@@ -21,6 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const userDetailsForm = document.getElementById('userDetailsForm');
     const otpForm = document.getElementById('otpForm');
     const resendOtpBtn = document.getElementById('resendOtpBtn');
+    const otpEmailDisplay = document.getElementById('otpEmailDisplay');
+    const otpInputs = document.querySelectorAll('.otp-input');
 
     // Global variables to track animation state
     let currentProgressAnimation = null;
@@ -28,21 +29,117 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentOutputContent = '';
     let userData = null;
     let pendingGenerationData = null;
+    let selectedOutputType = 'llms_txt'; // Default output type
 
-    // Function to load saved iframe height from localStorage
-    function loadIframeHeight() {
-        const savedHeight = localStorage.getItem('llmGenerator_iframeHeight');
-        if (savedHeight) {
-            outputIframe.style.height = savedHeight + 'px';
+    // Session storage key for tracking visited tools
+    const SESSION_STORAGE_KEY = 'util';
+    const LLM_TOOL_KEY = '/llm-text-generator';
+
+    // Cookie utility functions
+    function setCookie(name, value, days = 7) {
+        if (name === 'inquiry_form_payload' || name === 'result_height') {
+            // Session cookie (expires when browser closes)
+            document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))};path=/`;
         } else {
-            outputIframe.style.height = '400px'; // default height
+            // Regular cookie with expiration
+            const expires = new Date();
+            expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+            document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))};expires=${expires.toUTCString()};path=/`;
         }
     }
 
-    // Function to save iframe height to localStorage
+    function getCookie(name) {
+        const nameEQ = name + "=";
+        const ca = document.cookie.split(';');
+        for (let i = 0; i < ca.length; i++) {
+            let c = ca[i];
+            while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+            if (c.indexOf(nameEQ) === 0) {
+                try {
+                    return JSON.parse(decodeURIComponent(c.substring(nameEQ.length, c.length)));
+                } catch (e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    // Function to get session storage data
+    function getSessionStorage() {
+        try {
+            const data = sessionStorage.getItem(SESSION_STORAGE_KEY);
+            if (data) {
+                return JSON.parse(data);
+            }
+        } catch (error) {
+            console.error('Error reading session storage:', error);
+        }
+        // Return default structure if no data exists
+        return { state: { visitedTools: [] }, version: 0 };
+    }
+
+    // Function to update session storage
+    function updateSessionStorage(toolKey) {
+        try {
+            const data = getSessionStorage();
+            if (!data.state.visitedTools.includes(toolKey)) {
+                data.state.visitedTools.push(toolKey);
+                sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(data));
+                console.log('Updated session storage:', data);
+            }
+        } catch (error) {
+            console.error('Error updating session storage:', error);
+        }
+    }
+
+    // Function to check if tool has been visited
+    function isToolVisited(toolKey) {
+        const data = getSessionStorage();
+        return data.state.visitedTools.includes(toolKey);
+    }
+
+    // Function to initialize session storage on page load
+    function initializeSessionStorage() {
+        const data = getSessionStorage();
+        console.log('Current session storage:', data);
+        console.log('LLM tool visited:', isToolVisited(LLM_TOOL_KEY));
+    }
+
+    // Initialize result_height in both cookie and localStorage
+    function initializeResultHeightStorage() {
+        const cookieVal = getCookie('result_height');
+        const lsVal = localStorage.getItem('result_height');
+        if (cookieVal === null && lsVal === null) {
+            // Initialize both to 0
+            setCookie('result_height', '0');
+            localStorage.setItem('result_height', '0');
+        } else if (cookieVal !== null && lsVal === null) {
+            localStorage.setItem('result_height', String(cookieVal));
+        } else if (cookieVal === null && lsVal !== null) {
+            setCookie('result_height', String(lsVal));
+        }
+    }
+
+    // Function to load saved iframe height (prefer cookie, fallback to localStorage)
+    function loadIframeHeight() {
+        const cookieVal = getCookie('result_height');
+        const lsVal = localStorage.getItem('result_height');
+        const result_height = (cookieVal !== null && cookieVal !== undefined) ? cookieVal : (lsVal !== null ? lsVal : '0');
+        const numericHeight = parseInt(result_height, 10);
+        if (!isNaN(numericHeight) && numericHeight > 0) {
+            outputIframe.style.height = numericHeight + 'px';
+        } else {
+            outputIframe.style.height = '400px'; // default visual height when stored is 0
+        }
+    }
+
+    // Function to save iframe height to both cookie (session) and localStorage
     function saveIframeHeight() {
-        const currentHeight = outputIframe.offsetHeight;
-        localStorage.setItem('llmGenerator_iframeHeight', currentHeight.toString());
+        const result_height = outputIframe.offsetHeight;
+        const value = String(result_height);
+        setCookie('result_height', value); // Session cookie
+        localStorage.setItem('result_height', value);
     }
 
     // Function to handle backdrop click
@@ -81,6 +178,11 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('otpModal element not found!');
             return;
         }
+        
+        // Clear OTP inputs
+        otpInputs.forEach(input => input.value = '');
+        // Focus first input
+        otpInputs[0].focus();
         
         otpModal.classList.add('show');
         document.body.style.overflow = 'hidden';
@@ -160,8 +262,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             const iframeBody = iframeDoc.body;
             if (iframeBody) {
-                const contentHeight = iframeBody.scrollHeight;
-                const newHeight = Math.max(400, Math.min(contentHeight + 40, 600)); // Min 400px, Max 800px
+                const result_height = iframeBody.scrollHeight;
+                const newHeight = Math.max(400, Math.min(result_height + 40, 600)); // Min 400px, Max 800px
                 outputIframe.style.height = newHeight + 'px';
                 saveIframeHeight();
             }
@@ -298,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Show error message with modern styling
         statusMessage.textContent = `Error: ${message}`;
-        statusMessage.className = 'status-error';
+        statusMessage.className = 'status-message status-error';
         
         // Only show error in iframe for generation-related errors, not for validation/authentication errors
         if (!message.includes('OTP') && !message.includes('email') && !message.includes('verify') && 
@@ -307,6 +409,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const errorContent = `An error occurred: ${message}\n\nPlease try again with a different URL or check your API key configuration.`;
             displayContentInIframe(errorContent);
         }
+    }
+
+    // Function to display success message
+    function showSuccess(message) {
+        statusMessage.textContent = message;
+        statusMessage.className = 'status-message status-success';
     }
 
     generateBtn.addEventListener('click', async () => {
@@ -323,16 +431,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        const selectedOutputType = document.querySelector('input[name="outputType"]:checked').value;
-        
-        // Store generation data for later use
-        pendingGenerationData = {
-            url: url,
-            outputType: selectedOutputType
-        };
-        
-        // Show user details modal first
-        showUserDetailsModal();
+        // Check if user has already verified OTP for this tool
+        if (isToolVisited(LLM_TOOL_KEY)) {
+            // User has already verified, proceed directly to generation
+            pendingGenerationData = {
+                url: url,
+                outputType: selectedOutputType
+            };
+            startGeneration();
+        } else {
+            // User needs to verify OTP first
+            pendingGenerationData = {
+                url: url,
+                outputType: selectedOutputType
+            };
+            
+            // Show user details modal first
+            showUserDetailsModal();
+        }
     });
 
     // User details form submission
@@ -345,6 +461,24 @@ document.addEventListener('DOMContentLoaded', () => {
         
         userData = { name, email };
         
+        // Store form data in cookie
+        const inquiryFormPayload = {
+            uName: name,
+            uEmail: email,
+            ToolTitle: 'llm-text-generator',
+            ToolSubmit: 'Send'
+        };
+        setCookie('inquiry_form_payload', inquiryFormPayload); // Session cookie
+        
+        // Get the submit button and show loading state
+        const submitBtn = userDetailsForm.querySelector('.submit-btn');
+        const originalText = submitBtn.textContent;
+        
+        // Show loading state
+        submitBtn.textContent = 'Please wait...';
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = '0.7';
+        
         try {
             // Send OTP request
             const response = await fetch('/send_otp', {
@@ -356,6 +490,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             if (response.ok) {
+                // Display email in OTP modal
+                otpEmailDisplay.textContent = email;
                 hideUserDetailsModal();
                 showOtpModal();
             } else {
@@ -364,6 +500,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             showError('Failed to send OTP: ' + error.message);
+        } finally {
+            // Reset button state
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '1';
         }
     });
 
@@ -371,8 +512,22 @@ document.addEventListener('DOMContentLoaded', () => {
     otpForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        const formData = new FormData(otpForm);
-        const otp = formData.get('otp');
+        // Collect OTP from individual input fields
+        const otp = Array.from(otpInputs).map(input => input.value).join('');
+        
+        if (otp.length !== 6) {
+            showError('Please enter a complete 6-digit OTP');
+            return;
+        }
+        
+        // Get the submit button and show loading state
+        const submitBtn = otpForm.querySelector('.submit-btn');
+        const originalText = submitBtn.textContent;
+        
+        // Show loading state
+        submitBtn.textContent = 'Verifying...';
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = '0.7';
         
         try {
             // Verify OTP
@@ -388,6 +543,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             if (response.ok) {
+                // Update session storage to mark tool as visited
+                updateSessionStorage(LLM_TOOL_KEY);
+                
                 hideOtpModal();
                 // Start generation process
                 startGeneration();
@@ -397,11 +555,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             showError('Failed to verify OTP: ' + error.message);
+        } finally {
+            // Reset button state
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '1';
         }
     });
 
     // Resend OTP button
     resendOtpBtn.addEventListener('click', async () => {
+        // Show loading state
+        const originalText = resendOtpBtn.textContent;
+        resendOtpBtn.textContent = 'Please wait...';
+        resendOtpBtn.disabled = true;
+        resendOtpBtn.style.opacity = '0.7';
+        
         try {
             const response = await fetch('/send_otp', {
                 method: 'POST',
@@ -416,19 +585,74 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (response.ok) {
                 statusMessage.textContent = 'OTP resent successfully!';
-                statusMessage.className = 'status-success';
+                statusMessage.className = 'status-message status-success';
             } else {
                 const errorData = await response.json();
                 showError('Failed to resend OTP: ' + (errorData.error || 'Unknown error'));
             }
         } catch (error) {
             showError('Failed to resend OTP: ' + error.message);
+        } finally {
+            // Reset button state
+            resendOtpBtn.textContent = originalText;
+            resendOtpBtn.disabled = false;
+            resendOtpBtn.style.opacity = '1';
         }
     });
 
     // Modal close buttons
     modalCloseBtn.addEventListener('click', hideUserDetailsModal);
     otpModalCloseBtn.addEventListener('click', hideOtpModal);
+
+    // Toggle button functionality for output type selection
+    toggleButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons
+            toggleButtons.forEach(btn => btn.classList.remove('active'));
+            // Add active class to clicked button
+            button.classList.add('active');
+            // Update selected output type
+            selectedOutputType = button.getAttribute('data-type');
+        });
+    });
+
+    // OTP input functionality
+    otpInputs.forEach((input, index) => {
+        input.addEventListener('input', (e) => {
+            const value = e.target.value;
+            
+            // Only allow numbers
+            if (!/^\d*$/.test(value)) {
+                e.target.value = '';
+                return;
+            }
+            
+            // Move to next input if current is filled
+            if (value && index < otpInputs.length - 1) {
+                otpInputs[index + 1].focus();
+            }
+        });
+        
+        input.addEventListener('keydown', (e) => {
+            // Move to previous input on backspace if current is empty
+            if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                otpInputs[index - 1].focus();
+            }
+        });
+        
+        input.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const pastedData = e.clipboardData.getData('text').replace(/\D/g, '');
+            if (pastedData.length === 6) {
+                pastedData.split('').forEach((digit, i) => {
+                    if (otpInputs[i]) {
+                        otpInputs[i].value = digit;
+                    }
+                });
+                otpInputs[5].focus();
+            }
+        });
+    });
 
     // Function to start generation after OTP verification
     async function startGeneration() {
@@ -489,15 +713,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     const combinedOutput = `=== SUMMARIZED CONTENT ===\n\n${result.llms_text}\n\n=== FULL TEXT CONTENT ===\n\n${result.llms_full_text}`;
                     displayContentInIframe(combinedOutput);
                     statusMessage.textContent = 'Both LLM Text and Full Text generated successfully! Click download to get the zip file with separate .txt files.';
-                    statusMessage.className = 'status-success';
+                    statusMessage.className = 'status-message status-success';
                 } else if (result.llms_text) {
                     displayContentInIframe(result.llms_text);
                     statusMessage.textContent = 'LLM Text generated successfully!';
-                    statusMessage.className = 'status-success';
+                    statusMessage.className = 'status-message status-success';
                 } else if (result.llms_full_text) {
                     displayContentInIframe(result.llms_full_text);
                     statusMessage.textContent = 'LLM Full Text generated successfully!';
-                    statusMessage.className = 'status-success';
+                    statusMessage.className = 'status-message status-success';
                 } else {
                     showError('Unexpected response format from server.');
                 }
@@ -557,8 +781,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // Get the selected output type to determine filename
-        const selectedOutputType = document.querySelector('input[name="outputType"]:checked').value;
+        // Use the global selectedOutputType variable
+        // const selectedOutputType = document.querySelector('input[name="outputType"]:checked').value;
         
         // For both mode, use the stored zip blob
         if (selectedOutputType === 'llms_both') {
@@ -574,7 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.URL.revokeObjectURL(downloadUrl);
                 
                 statusMessage.textContent = 'Zip file downloaded successfully!';
-                statusMessage.className = 'status-success';
+                statusMessage.className = 'status-message status-success';
             } else {
                 showError('No zip file available. Please generate content first.');
             }
@@ -635,9 +859,9 @@ document.addEventListener('DOMContentLoaded', () => {
         copyMessage.style.display = 'none';
         
         // Reset to default output type (summarized)
-        llmsTxtRadio.checked = true;
-        llmsFullTxtRadio.checked = false;
-        llmsBothRadio.checked = false;
+        selectedOutputType = 'llms_txt';
+        toggleButtons.forEach(btn => btn.classList.remove('active'));
+        toggleButtons[0].classList.add('active'); // First button (LLMs Txt)
         
         // Focus back to the URL input for better UX
         websiteUrlInput.focus();
@@ -688,4 +912,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    // Function to pre-fill form with cookie data
+    function prefillFormFromCookie() {
+        const cookieData = getCookie('inquiry_form_payload');
+        if (cookieData && cookieData.uName && cookieData.uEmail) {
+            const nameInput = document.getElementById('formName');
+            const emailInput = document.getElementById('formEmail');
+            
+            if (nameInput && emailInput) {
+                nameInput.value = cookieData.uName;
+                emailInput.value = cookieData.uEmail;
+            }
+        }
+    }
+
+    // Initialize session/local storage for result_height, session storage, and pre-fill form
+    initializeResultHeightStorage();
+    initializeSessionStorage();
+    prefillFormFromCookie();
 }); 

@@ -97,6 +97,7 @@ app = Flask(__name__)
 # In-memory storage for OTPs (in production, use Redis or database)
 otp_storage = {}
 
+
 # Enhanced Error Handlers
 @app.errorhandler(400)
 def bad_request(error):

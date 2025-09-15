@@ -3,49 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LLMs Txt Generator</title>
+    <title>LLMs Txt Generator – Tool by Attrock</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>LLMs Txt Generator</h1>
-        <p class="subtitle">Transform any website into structured, AI-ready content</p>
-        
-        <div class="output-type-selection">
-            <h3>Choose Output Type</h3>
-            <div class="radio-group">
-                <div class="radio-option">
-                    <input type="radio" name="outputType" id="llmsTxt" value="llms_txt" checked>
-                    <label for="llmsTxt">LLMs Txt (Summarized)</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" name="outputType" id="llmsFullTxt" value="llms_full_txt">
-                    <label for="llmsFullTxt">LLMs Full Txt (Full Content)</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" name="outputType" id="llmsBoth" value="llms_both">
-                    <label for="llmsBoth">Both (Summarized + Full Txt)</label>
+    <header class="hero">
+        <h1>LLMs Txt Generator – Tool by Attrock</h1>
+        <br />
+        <p class="subtitle">Generate High-Quality AI Text in Seconds — Powered by Advanced Language Models</p>
+
+        <p class="description">
+            Create natural-sounding, context-aware, and professional content instantly with our LLMs Txt Generator —
+            a powerful tool for your projects. Whether you're a marketer, writer, student, or business professional,
+            this AI-powered tool helps you generate summaries, full-length content, or optimized copy in just a few
+            clicks.
+        </p>
+    </header>
+
+    <main class="main-wrapper">
+        <section class="generator-card">
+            <div class="controls">
+                <div class="toggle-group">
+                    <label class="section-label" for="websiteUrl">Choose Output Type:</label>
+                    <div class="toggle-buttons">
+                        <button class="toggle-btn active" data-type="llms_txt">LLMs Txt (summarized)</button>
+                        <button class="toggle-btn" data-type="llms_full_txt">LLMs Full Txt (Full Content)</button>
+                        <button class="toggle-btn" data-type="llms_both">Both</button>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div class="input-section">
-            <input type="text" id="websiteUrl" placeholder="Enter website URL (e.g., https://example.com)" required>
-            <button id="generateBtn" class="btn btn-primary">Generate LLMs Txt</button>
-            <button id="clearBtn" class="btn btn-secondary">Clear</button>
-        </div>
-        <p id="statusMessage" style="color: gray;"></p>
-        <div class="output-section" id="outputSection" style="display: none;">
-            <h2>Generated Output:</h2>
-            <div class="iframe-container">
-                <iframe id="outputIframe" src="about:blank" style="width: 100%; border: 1px solid #ccc; border-radius: 8px;"></iframe>
-                <div class="button-container">
-                    <button id="copyBtn" class="btn btn-secondary">📋 Copy to Clipboard</button>
-                    <button id="downloadBtn" class="btn btn-accent">📥 Download text file</button>
+            <div class="input-row">
+                <input type="text" id="websiteUrl" placeholder="Paste URL here..." required>
+                <button id="generateBtn" class="btn generate">LLMs Txt Generator</button>
+                <button id="clearBtn" class="btn clear">Clear</button>
+            </div>
+            <p id="statusMessage" class="status-message"></p>
+        </section>
+
+        <section class="generator-card" id="outputSection" style="display: none;">
+            <div class="output">
+                <h2>Generated Output</h2>
+                <div class="iframe-container">
+                    <iframe id="outputIframe" src="about:blank"></iframe>
+                </div>
+                <div class="action-buttons">
+                    <button id="copyBtn" class="btn copy">Copy to Clipboard</button>
+                    <button id="downloadBtn" class="btn download">Download text file</button>
                     <span id="copyMessage" style="display: none;">Copied!</span>
                 </div>
             </div>
-        </div>
-    </div>
+        </section>
+    </main>
     
     <!-- Processing overlay -->
     <div class="processing-overlay" id="processingOverlay">
@@ -64,27 +72,27 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <div class="modal-title h4">You're one step away</div>
-                    <button type="button" class="btn-close" aria-label="Close" id="modalCloseBtn"></button>
+                    <div class="modal-title">You're one step away</div>
+                    <button type="button" class="btn-close" aria-label="Close" id="modalCloseBtn">×</button>
                 </div>
                 <div class="modal-body">
                     <form id="userDetailsForm">
-                        <p class="text-center w-100 small text-dark fs-6 m-0 mb-3 px-5">We will send you a verification code (OTP) to this email address</p>
-                        <div class="mb-3">
+                        <p class="instruction-text">We will send you a verification code (OTP) to this email address</p>
+                        <div class="form-group">
                             <label class="form-label" for="formName">Your name*</label>
-                            <input name="name" placeholder="Enter your full name here" type="text" id="formName" class="input-field form-control" value="" required>
+                            <input name="name" placeholder="Enter your full name here" type="text" id="formName" class="form-input" value="" required>
                         </div>
-                        <div class="mb-3">
+                        <div class="form-group">
                             <label class="form-label" for="formEmail">Your email address*</label>
-                            <input name="email" placeholder="Enter your business email address" type="email" id="formEmail" class="input-field form-control" value="" required>
+                            <input name="email" placeholder="Enter your business email address" type="email" id="formEmail" class="form-input" value="" required>
                         </div>
-                        <div class="d-flex justify-content-center">
-                            <button type="submit" class="submit-btn btn btn-primary">Get OTP</button>
+                        <div class="button-container">
+                            <button type="submit" class="submit-btn">Get OTP</button>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <p class="text-center w-100 small footer-note">We don't spam and respect your privacy. Submitting incorrect or invalid details will lead to no response.</p>
+                    <p class="disclaimer-text">We don't spam and respect your privacy. Submitting incorrect or invalid details will lead to no response.</p>
                 </div>
             </div>
         </div>
@@ -95,26 +103,33 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <div class="modal-title h4">Verify Your Email</div>
-                    <button type="button" class="btn-close" aria-label="Close" id="otpModalCloseBtn"></button>
+                    <div class="modal-title">Verify OTP</div>
+                    <button type="button" class="btn-close" aria-label="Close" id="otpModalCloseBtn">×</button>
                 </div>
                 <div class="modal-body">
                     <form id="otpForm">
-                        <p class="text-center w-100 small text-dark fs-6 m-0 mb-3 px-5">Enter the 6-digit verification code sent to your email</p>
-                        <div class="mb-3">
-                            <label class="form-label" for="otpCode">Verification Code*</label>
-                            <input name="otp" placeholder="Enter 6-digit code" type="text" id="otpCode" class="input-field form-control text-center" value="" maxlength="6" required>
+                        <p class="instruction-text">Enter the OTP sent to your email</p>
+                        <p class="email-display" id="otpEmailDisplay"></p>
+                        <div class="form-group">
+                            <label class="form-label">OTP*</label>
+                            <div class="otp-input-container">
+                                <input type="text" class="otp-input" maxlength="1" data-index="0">
+                                <input type="text" class="otp-input" maxlength="1" data-index="1">
+                                <input type="text" class="otp-input" maxlength="1" data-index="2">
+                                <span class="otp-separator">-</span>
+                                <input type="text" class="otp-input" maxlength="1" data-index="3">
+                                <input type="text" class="otp-input" maxlength="1" data-index="4">
+                                <input type="text" class="otp-input" maxlength="1" data-index="5">
+                            </div>
                         </div>
-                        <div class="d-flex justify-content-center">
-                            <button type="submit" class="submit-btn btn btn-primary">Verify & Start Generation</button>
-                        </div>
-                        <div class="text-center mt-3">
-                            <button type="button" class="btn btn-link" id="resendOtpBtn">Resend OTP</button>
+                        <div class="button-container">
+                            <button type="button" class="resend-btn" id="resendOtpBtn">Resend OTP</button>
+                            <button type="submit" class="submit-btn">Verify OTP</button>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <p class="text-center w-100 small footer-note">Didn't receive the code? Check your spam folder or try resending.</p>
+                    <p class="disclaimer-text">We don't spam and respect your privacy. Submitting incorrect or invalid details will lead to no response.</p>
                 </div>
             </div>
         </div>
