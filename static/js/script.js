@@ -1,7 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
     const websiteUrlInput = document.getElementById('websiteUrl');
     const generateBtn = document.getElementById('generateBtn');
-    const outputText = document.getElementById('outputText');
+    const outputSection = document.getElementById('outputSection');
+    const outputIframe = document.getElementById('outputIframe');
     const statusMessage = document.getElementById('statusMessage');
     const copyBtn = document.getElementById('copyBtn');
     const downloadBtn = document.getElementById('downloadBtn');
@@ -13,10 +14,159 @@ document.addEventListener('DOMContentLoaded', () => {
     const llmsTxtRadio = document.getElementById('llmsTxt');
     const llmsFullTxtRadio = document.getElementById('llmsFullTxt');
     const llmsBothRadio = document.getElementById('llmsBoth');
+    const userDetailsModal = document.getElementById('userDetailsModal');
+    const otpModal = document.getElementById('otpModal');
+    const modalCloseBtn = document.getElementById('modalCloseBtn');
+    const otpModalCloseBtn = document.getElementById('otpModalCloseBtn');
+    const userDetailsForm = document.getElementById('userDetailsForm');
+    const otpForm = document.getElementById('otpForm');
+    const resendOtpBtn = document.getElementById('resendOtpBtn');
 
     // Global variables to track animation state
     let currentProgressAnimation = null;
     let currentProcessingState = false;
+    let currentOutputContent = '';
+    let userData = null;
+    let pendingGenerationData = null;
+
+    // Function to load saved iframe height from localStorage
+    function loadIframeHeight() {
+        const savedHeight = localStorage.getItem('llmGenerator_iframeHeight');
+        if (savedHeight) {
+            outputIframe.style.height = savedHeight + 'px';
+        } else {
+            outputIframe.style.height = '400px'; // default height
+        }
+    }
+
+    // Function to save iframe height to localStorage
+    function saveIframeHeight() {
+        const currentHeight = outputIframe.offsetHeight;
+        localStorage.setItem('llmGenerator_iframeHeight', currentHeight.toString());
+    }
+
+    // Function to handle backdrop click
+    function handleBackdropClick(e) {
+        if (e.target === userDetailsModal) {
+            hideUserDetailsModal();
+        }
+    }
+
+    // Function to show user details modal
+    function showUserDetailsModal() {
+        if (!userDetailsModal) {
+            console.error('userDetailsModal element not found!');
+            return;
+        }
+        
+        userDetailsModal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        
+        // Add backdrop click handler
+        userDetailsModal.addEventListener('click', handleBackdropClick);
+    }
+
+    // Function to hide user details modal
+    function hideUserDetailsModal() {
+        userDetailsModal.classList.remove('show');
+        document.body.style.overflow = 'auto';
+        
+        // Remove backdrop click handler
+        userDetailsModal.removeEventListener('click', handleBackdropClick);
+    }
+
+    // Function to show OTP modal
+    function showOtpModal() {
+        if (!otpModal) {
+            console.error('otpModal element not found!');
+            return;
+        }
+        
+        otpModal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        
+        // Add backdrop click handler
+        otpModal.addEventListener('click', handleOtpBackdropClick);
+    }
+
+    // Function to hide OTP modal
+    function hideOtpModal() {
+        otpModal.classList.remove('show');
+        document.body.style.overflow = 'auto';
+        
+        // Remove backdrop click handler
+        otpModal.removeEventListener('click', handleOtpBackdropClick);
+    }
+
+    // Function to handle OTP backdrop click
+    function handleOtpBackdropClick(e) {
+        if (e.target === otpModal) {
+            hideOtpModal();
+        }
+    }
+
+    // Function to display content in iframe
+    function displayContentInIframe(content) {
+        currentOutputContent = content;
+        
+        // Create HTML content for iframe
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body {
+                        font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+                        font-size: 14px;
+                        line-height: 1.6;
+                        margin: 0;
+                        padding: 20px;
+                        background: #f9fafb;
+                        color: #374151;
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                    }
+                    .content {
+                        background: white;
+                        padding: 20px;
+                        border-radius: 8px;
+                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                        max-width: 100%;
+                        overflow-x: auto;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="content">${content.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;')}</div>
+            </body>
+            </html>
+        `;
+        
+        // Write content to iframe
+        const iframeDoc = outputIframe.contentDocument || outputIframe.contentWindow.document;
+        iframeDoc.open();
+        iframeDoc.write(htmlContent);
+        iframeDoc.close();
+        
+        // Show output section
+        outputSection.style.display = 'block';
+        
+        // Load saved height
+        loadIframeHeight();
+        
+        // Auto-adjust height based on content
+        setTimeout(() => {
+            const iframeBody = iframeDoc.body;
+            if (iframeBody) {
+                const contentHeight = iframeBody.scrollHeight;
+                const newHeight = Math.max(400, Math.min(contentHeight + 40, 600)); // Min 400px, Max 800px
+                outputIframe.style.height = newHeight + 'px';
+                saveIframeHeight();
+            }
+        }, 100);
+    }
 
     // Function to validate URL
     function isValidUrl(string) {
@@ -62,7 +212,8 @@ document.addEventListener('DOMContentLoaded', () => {
             generateBtn.classList.add('processing');
             
             // Clear previous output
-            outputText.value = '';
+            currentOutputContent = '';
+            outputSection.style.display = 'none';
             
             // Show processing message
             statusMessage.textContent = 'Processing website content...';
@@ -148,7 +299,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show error message with modern styling
         statusMessage.textContent = `Error: ${message}`;
         statusMessage.className = 'status-error';
-        outputText.value = `An error occurred: ${message}\n\nPlease try again with a different URL or check your API key configuration.`;
+        
+        // Only show error in iframe for generation-related errors, not for validation/authentication errors
+        if (!message.includes('OTP') && !message.includes('email') && !message.includes('verify') && 
+            !message.includes('Invalid URL') && !message.includes('URL format') && 
+            !message.includes('Please enter') && !message.includes('required')) {
+            const errorContent = `An error occurred: ${message}\n\nPlease try again with a different URL or check your API key configuration.`;
+            displayContentInIframe(errorContent);
+        }
     }
 
     generateBtn.addEventListener('click', async () => {
@@ -167,25 +325,136 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const selectedOutputType = document.querySelector('input[name="outputType"]:checked').value;
         
+        // Store generation data for later use
+        pendingGenerationData = {
+            url: url,
+            outputType: selectedOutputType
+        };
+        
+        // Show user details modal first
+        showUserDetailsModal();
+    });
+
+    // User details form submission
+    userDetailsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(userDetailsForm);
+        const name = formData.get('name');
+        const email = formData.get('email');
+        
+        userData = { name, email };
+        
+        try {
+            // Send OTP request
+            const response = await fetch('/send_otp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ name, email })
+            });
+            
+            if (response.ok) {
+                hideUserDetailsModal();
+                showOtpModal();
+            } else {
+                const errorData = await response.json();
+                showError('Failed to send OTP: ' + (errorData.error || 'Unknown error'));
+            }
+        } catch (error) {
+            showError('Failed to send OTP: ' + error.message);
+        }
+    });
+
+    // OTP form submission
+    otpForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(otpForm);
+        const otp = formData.get('otp');
+        
+        try {
+            // Verify OTP
+            const response = await fetch('/verify_otp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    email: userData.email, 
+                    otp: otp 
+                })
+            });
+            
+            if (response.ok) {
+                hideOtpModal();
+                // Start generation process
+                startGeneration();
+            } else {
+                const errorData = await response.json();
+                showError('Invalid OTP: ' + (errorData.error || 'Please try again'));
+            }
+        } catch (error) {
+            showError('Failed to verify OTP: ' + error.message);
+        }
+    });
+
+    // Resend OTP button
+    resendOtpBtn.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/send_otp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    name: userData.name, 
+                    email: userData.email 
+                })
+            });
+            
+            if (response.ok) {
+                statusMessage.textContent = 'OTP resent successfully!';
+                statusMessage.className = 'status-success';
+            } else {
+                const errorData = await response.json();
+                showError('Failed to resend OTP: ' + (errorData.error || 'Unknown error'));
+            }
+        } catch (error) {
+            showError('Failed to resend OTP: ' + error.message);
+        }
+    });
+
+    // Modal close buttons
+    modalCloseBtn.addEventListener('click', hideUserDetailsModal);
+    otpModalCloseBtn.addEventListener('click', hideOtpModal);
+
+    // Function to start generation after OTP verification
+    async function startGeneration() {
+        if (!pendingGenerationData) return;
+        
+        const { url, outputType } = pendingGenerationData;
+        
         // Set UI to processing state
         setProcessingState(true, 'Fetching and processing website content...');
 
         try {
             // Update processing detail after a delay to simulate progress
             setTimeout(() => {
-                if (currentProcessingState) { // Only update if still processing
+                if (currentProcessingState) {
                     processingDetail.textContent = 'Analyzing website structure...';
                 }
             }, 3000);
             
             setTimeout(() => {
-                if (currentProcessingState) { // Only update if still processing
+                if (currentProcessingState) {
                     processingDetail.textContent = 'Extracting internal links...';
                 }
             }, 6000);
             
             setTimeout(() => {
-                if (currentProcessingState) { // Only update if still processing
+                if (currentProcessingState) {
                     processingDetail.textContent = 'Generating summaries (this may take a while)...';
                 }
             }, 9000);
@@ -198,7 +467,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: JSON.stringify({
                     websiteUrl: url,
-                    outputType: selectedOutputType
+                    outputType: outputType,
+                    userData: userData
                 })
             });
 
@@ -215,60 +485,65 @@ document.addEventListener('DOMContentLoaded', () => {
                     const zipBytes = new Uint8Array(zipData.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
                     window.storedZipBlob = new Blob([zipBytes], { type: 'application/zip' });
                     
-                    // Show combined content in textarea
+                    // Show combined content in iframe
                     const combinedOutput = `=== SUMMARIZED CONTENT ===\n\n${result.llms_text}\n\n=== FULL TEXT CONTENT ===\n\n${result.llms_full_text}`;
-                    outputText.value = combinedOutput;
+                    displayContentInIframe(combinedOutput);
                     statusMessage.textContent = 'Both LLM Text and Full Text generated successfully! Click download to get the zip file with separate .txt files.';
                     statusMessage.className = 'status-success';
                 } else if (result.llms_text) {
-                    outputText.value = result.llms_text;
+                    displayContentInIframe(result.llms_text);
                     statusMessage.textContent = 'LLM Text generated successfully!';
                     statusMessage.className = 'status-success';
                 } else if (result.llms_full_text) {
-                    outputText.value = result.llms_full_text;
+                    displayContentInIframe(result.llms_full_text);
                     statusMessage.textContent = 'LLM Full Text generated successfully!';
                     statusMessage.className = 'status-success';
                 } else {
                     showError('Unexpected response format from server.');
                 }
-                copyBtn.style.display = 'inline-block'; // Show copy button after success
-                downloadBtn.style.display = 'inline-block'; // Show download button after success
+                copyBtn.style.display = 'inline-block';
+                downloadBtn.style.display = 'inline-block';
             } else {
                 const errorData = await response.json();
                 showError(errorData.error || 'An unknown error occurred.');
             }
             
         } catch (error) {
-            // Reset UI processing state and show error
             console.error('Error:', error);
             showError(error.message);
         }
-    });
+    }
     
     // Implement copy to clipboard functionality
     copyBtn.addEventListener('click', () => {
-        if (!outputText.value) {
+        if (!currentOutputContent) {
             return;
         }
-        
-        // Copy text to clipboard
-        outputText.select();
-        outputText.setSelectionRange(0, 99999); // For mobile devices
         
         try {
             // Use the modern clipboard API if available
             if (navigator.clipboard) {
-                navigator.clipboard.writeText(outputText.value)
+                navigator.clipboard.writeText(currentOutputContent)
                     .then(() => showCopySuccess())
                     .catch(err => {
                         console.error('Failed to copy: ', err);
                         // Fallback to older method on error
+                        const textArea = document.createElement('textarea');
+                        textArea.value = currentOutputContent;
+                        document.body.appendChild(textArea);
+                        textArea.select();
                         document.execCommand('copy');
+                        document.body.removeChild(textArea);
                         showCopySuccess();
                     });
             } else {
                 // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = currentOutputContent;
+                document.body.appendChild(textArea);
+                textArea.select();
                 document.execCommand('copy');
+                document.body.removeChild(textArea);
                 showCopySuccess();
             }
         } catch (err) {
@@ -278,7 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Implement download text file functionality
     downloadBtn.addEventListener('click', () => {
-        if (!outputText.value) {
+        if (!currentOutputContent) {
             return;
         }
         
@@ -313,7 +588,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         // Create a blob with the text content
-        const blob = new Blob([outputText.value], { type: 'text/plain' });
+        const blob = new Blob([currentOutputContent], { type: 'text/plain' });
         
         // Create a temporary URL for the blob
         const url = window.URL.createObjectURL(blob);
@@ -343,8 +618,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Clear the URL input
         websiteUrlInput.value = '';
         
-        // Clear the output text
-        outputText.value = '';
+        // Clear the output content and hide section
+        currentOutputContent = '';
+        outputSection.style.display = 'none';
         
         // Clear status message
         statusMessage.textContent = '';
@@ -384,9 +660,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
     
+    // Add iframe resize handler
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            if (outputSection.style.display !== 'none') {
+                saveIframeHeight();
+            }
+        }, 250);
+    });
+
     // Cleanup function to handle page unload
     window.addEventListener('beforeunload', () => {
         clearProgressAnimation();
+        saveIframeHeight();
     });
     
     // Also cleanup on page visibility change (when user switches tabs)

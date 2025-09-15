@@ -34,10 +34,10 @@
             <button id="clearBtn" class="btn btn-secondary">Clear</button>
         </div>
         <p id="statusMessage" style="color: gray;"></p>
-        <div class="output-section">
+        <div class="output-section" id="outputSection" style="display: none;">
             <h2>Generated Output:</h2>
-            <div class="textarea-container">
-                <textarea id="outputText" readonly rows="20" cols="80" style="width: 100%;"></textarea>
+            <div class="iframe-container">
+                <iframe id="outputIframe" src="about:blank" style="width: 100%; border: 1px solid #ccc; border-radius: 8px;"></iframe>
                 <div class="button-container">
                     <button id="copyBtn" class="btn btn-secondary">📋 Copy to Clipboard</button>
                     <button id="downloadBtn" class="btn btn-accent">📥 Download text file</button>
@@ -55,6 +55,67 @@
             <div class="processing-detail" id="processingDetail">This may take a few moments</div>
             <div class="processing-progress">
                 <div class="progress-bar" id="progressBar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Details Modal -->
+    <div role="dialog" aria-modal="true" class="fade custom-modal modal" id="userDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title h4">You're one step away</div>
+                    <button type="button" class="btn-close" aria-label="Close" id="modalCloseBtn"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="userDetailsForm">
+                        <p class="text-center w-100 small text-dark fs-6 m-0 mb-3 px-5">We will send you a verification code (OTP) to this email address</p>
+                        <div class="mb-3">
+                            <label class="form-label" for="formName">Your name*</label>
+                            <input name="name" placeholder="Enter your full name here" type="text" id="formName" class="input-field form-control" value="" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="formEmail">Your email address*</label>
+                            <input name="email" placeholder="Enter your business email address" type="email" id="formEmail" class="input-field form-control" value="" required>
+                        </div>
+                        <div class="d-flex justify-content-center">
+                            <button type="submit" class="submit-btn btn btn-primary">Get OTP</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <p class="text-center w-100 small footer-note">We don't spam and respect your privacy. Submitting incorrect or invalid details will lead to no response.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTP Verification Modal -->
+    <div role="dialog" aria-modal="true" class="fade custom-modal modal" id="otpModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title h4">Verify Your Email</div>
+                    <button type="button" class="btn-close" aria-label="Close" id="otpModalCloseBtn"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="otpForm">
+                        <p class="text-center w-100 small text-dark fs-6 m-0 mb-3 px-5">Enter the 6-digit verification code sent to your email</p>
+                        <div class="mb-3">
+                            <label class="form-label" for="otpCode">Verification Code*</label>
+                            <input name="otp" placeholder="Enter 6-digit code" type="text" id="otpCode" class="input-field form-control text-center" value="" maxlength="6" required>
+                        </div>
+                        <div class="d-flex justify-content-center">
+                            <button type="submit" class="submit-btn btn btn-primary">Verify & Start Generation</button>
+                        </div>
+                        <div class="text-center mt-3">
+                            <button type="button" class="btn btn-link" id="resendOtpBtn">Resend OTP</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <p class="text-center w-100 small footer-note">Didn't receive the code? Check your spam folder or try resending.</p>
+                </div>
             </div>
         </div>
     </div>

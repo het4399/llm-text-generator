@@ -19,6 +19,10 @@ import json
 from markdownify import markdownify
 import zipfile
 import io
+import random
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Configure logging
 logging.basicConfig(
@@ -82,7 +86,16 @@ CONCURRENT_WORKERS = int(os.environ.get("CONCURRENT_WORKERS", 10))
 # Delay between API calls in seconds (to avoid rate limiting)
 API_CALL_DELAY = float(os.environ.get("API_CALL_DELAY", 0.5))
 
+# Email configuration for OTP
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+
 app = Flask(__name__)
+
+# In-memory storage for OTPs (in production, use Redis or database)
+otp_storage = {}
 
 # Enhanced Error Handlers
 @app.errorhandler(400)
@@ -1038,10 +1051,6 @@ def get_page_summary(page_url, link_title=None):
             except openai.RateLimitError as e:
                 logger.error(f"OpenAI rate limit exceeded for {page_url}: {str(e)}")
                 return get_fallback_summary(soup, page_url, link_title, error_prefix="Rate limit exceeded: ")
-            
-            except openai.APIError as e:
-                logger.error(f"OpenAI API error for {page_url}: {str(e)}")
-                return get_fallback_summary(soup, page_url, link_title, error_prefix="API error: ")
             
             except openai.APIConnectionError as e:
                 logger.error("OpenAI connection error for %s: %s", page_url, str(e))
@@ -2221,6 +2230,105 @@ def health_check():
             "error": str(e)
         }), 500
 
+@app.route('/send_otp', methods=['POST'])
+def send_otp():
+    """Send OTP to user's email address."""
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        email = data.get('email')
+        
+        if not name or not email:
+            return jsonify({"error": "Name and email are required"}), 400
+        
+        # Generate 6-digit OTP
+        otp = str(random.randint(100000, 999999))
+        
+        # Store OTP with timestamp
+        otp_storage[email] = {
+            'otp': otp,
+            'timestamp': time.time(),
+            'name': name
+        }
+        
+        # Send email (simplified version - in production, use proper email service)
+        if SMTP_USERNAME and SMTP_PASSWORD:
+            try:
+                msg = MIMEMultipart()
+                msg['From'] = SMTP_USERNAME
+                msg['To'] = email
+                msg['Subject'] = "Your LLM Text Generator Verification Code"
+                
+                body = f"""
+                Hello {name},
+                
+                Your verification code is: {otp}
+                
+                This code will expire in 10 minutes.
+                
+                Best regards,
+                LLM Text Generator Team
+                """
+                
+                msg.attach(MIMEText(body, 'plain'))
+                
+                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                server.starttls()
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.send_message(msg)
+                server.quit()
+                
+                logger.info(f"OTP sent to {email}")
+                
+            except Exception as e:
+                logger.error(f"Failed to send email: {str(e)}")
+                return jsonify({"error": "Failed to send OTP email"}), 500
+        else:
+            # For development - just log the OTP
+            logger.info(f"OTP for {email}: {otp}")
+        
+        return jsonify({"message": "OTP sent successfully"}), 200
+        
+    except Exception as e:
+        logger.error(f"Error sending OTP: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/verify_otp', methods=['POST'])
+def verify_otp():
+    """Verify OTP and return success status."""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        otp = data.get('otp')
+        
+        if not email or not otp:
+            return jsonify({"error": "Email and OTP are required"}), 400
+        
+        # Check if OTP exists and is valid
+        if email not in otp_storage:
+            return jsonify({"error": "OTP not found or expired"}), 400
+        
+        stored_data = otp_storage[email]
+        
+        # Check if OTP is expired (10 minutes)
+        if time.time() - stored_data['timestamp'] > 600:  # 10 minutes
+            del otp_storage[email]
+            return jsonify({"error": "OTP expired"}), 400
+        
+        # Verify OTP
+        if stored_data['otp'] != otp:
+            return jsonify({"error": "Invalid OTP"}), 400
+        
+        # OTP is valid - mark as verified
+        otp_storage[email]['verified'] = True
+        
+        logger.info(f"OTP verified for {email}")
+        return jsonify({"message": "OTP verified successfully"}), 200
+        
+    except Exception as e:
+        logger.error(f"Error verifying OTP: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
 @app.route('/generate_llm_text', methods=['POST'])
 def generate_llm_text():
     start_time = time.time()
@@ -2228,11 +2336,20 @@ def generate_llm_text():
         data = request.get_json()
         website_url = data.get('websiteUrl')
         output_type = data.get('outputType', 'llms_txt')  # Get the new outputType, default to 'llms_txt'
+        user_data = data.get('userData')
 
         if not website_url:
             error_msg = "Website URL is required"
             log_request(website_url, output_type, False, error_msg, time.time() - start_time)
             return jsonify({"error": error_msg}), 400
+
+        # Check if user is verified (if userData is provided)
+        if user_data:
+            email = user_data.get('email')
+            if email not in otp_storage or not otp_storage[email].get('verified', False):
+                error_msg = "Please verify your email first"
+                log_request(website_url, output_type, False, error_msg, time.time() - start_time)
+                return jsonify({"error": error_msg}), 403
 
         # Use enhanced URL validation
         is_valid, validation_error = validate_url(website_url)
