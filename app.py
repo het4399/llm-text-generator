@@ -2365,7 +2365,7 @@ def generate_llm_text():
 
         # Fetch the main page content
         try:
-            logger.info(f"Fetching main page: {website_url}")
+            logger.info("") # logger.info(f"Fetching main page: {website_url}")
             response = requests.get(website_url, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
         except requests.exceptions.Timeout:
@@ -2391,7 +2391,7 @@ def generate_llm_text():
             if is_generic_utility_url(urlparse(link['url']).path) or
                is_generic_link_text(link['description'])
         ]
-        logger.info(f"Would have filtered out {len(filtered_out_links)} links")
+        logger.info("") #logger.info(f"Would have filtered out {len(filtered_out_links)} links")
         if filtered_out_links:
             logger.info(f"Sample filtered out links: {filtered_out_links[:5]}")
         logger.info(f"Found {len(valid_links)} valid internal links after filtering.")
@@ -2399,10 +2399,10 @@ def generate_llm_text():
         # Log detailed breakdown of valid links
         content_links = [link for link in valid_links if any(path in link['url'] for path in ['/blog/', '/article/', '/post/', '/news/', '/content/'])]
         logger.info(f"Valid content links to process: {len(content_links)}")
-        logger.info(f"Total valid links to process: {len(valid_links)}")
+        logger.info("") # logger.info(f"Total valid links to process: {len(valid_links)}")
 
         if output_type == 'llms_txt':
-            logger.info("Generating LLM Text (summarized)")
+            logger.info("") #logger.info("Generating LLM Text (summarized)")
             successful_links = []
             failed_links = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
@@ -2429,11 +2429,11 @@ def generate_llm_text():
                             "error": str(exc)
                         })
             
-            logger.info("Formatting llms.txt content")
+            logger.info("") #logger.info("Formatting llms.txt content")
             llms_text = format_llms_text(website_url, site_description, successful_links, failed_links)
             
-            logger.info("Successfully generated llms.txt content")
-            logger.info(f"Final processing summary: {len(successful_links)} successful, {len(failed_links)} failed out of {len(valid_links)} total links")
+            logger.info("") #logger.info("Successfully generated llms.txt content")
+            logger.info("") #logger.info(f"Final processing summary: {len(successful_links)} successful, {len(failed_links)} failed out of {len(valid_links)} total links")
             processing_time = time.time() - start_time
             total_words = sum(len(link.get("summary", "").split()) for link in successful_links)
             log_request(website_url, output_type, True, None, processing_time, total_words)
@@ -2445,7 +2445,7 @@ def generate_llm_text():
             })
 
         elif output_type == 'llms_full_txt':
-            logger.info("Generating LLM Full Text (full content)")
+            logger.info("") #logger.info("Generating LLM Full Text (full content)")
             successful_sections = []
             failed_sections = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as executor:
@@ -2480,10 +2480,10 @@ def generate_llm_text():
                             "error": str(exc)
                         })
             
-            logger.info("Formatting llms-full.txt content")
+            logger.info("") #logger.info("Formatting llms-full.txt content")
             llms_full_text_output = format_llms_full_text(website_url, site_description, successful_sections, failed_sections)  # This new function must be defined below
             
-            logger.info("Successfully generated llms-full.txt content")
+            logger.info("") #logger.info("Successfully generated llms-full.txt content")
             processing_time = time.time() - start_time
             total_words = sum(len(section.get("content", "").split()) for section in successful_sections)
             log_request(website_url, output_type, True, None, processing_time, total_words)
@@ -2553,7 +2553,7 @@ def generate_llm_text():
                             "error": str(exc)
                         })
             
-            logger.info("Formatting both llms.txt and llms-full.txt content")
+            logger.info("") #logger.info("Formatting both llms.txt and llms-full.txt content")
             llms_text = format_llms_text(website_url, site_description, successful_summary_links, failed_summary_links)
             llms_full_text_output = format_llms_full_text(website_url, site_description, successful_full_sections, failed_full_sections)
             
@@ -2617,7 +2617,7 @@ def parse_sitemap(sitemap_url):
         list: List of URLs from the sitemap
     """
     try:
-        logger.info(f"Fetching sitemap: {sitemap_url}")
+        logger.info("") #logger.info(f"Fetching sitemap: {sitemap_url}")
         response = requests.get(sitemap_url, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         
@@ -2641,14 +2641,14 @@ def parse_sitemap(sitemap_url):
                 if loc:
                     urls.append(loc.text.strip())
         
-        logger.info(f"Found {len(urls)} URLs in sitemap")
+        logger.info("") #logger.info(f"Found {len(urls)} URLs in sitemap")
         
         # Debug: Log URL types
         content_urls = [url for url in urls if any(path in url for path in ['/blog/', '/article/', '/post/', '/news/', '/content/'])]
         image_urls = [url for url in urls if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])]
         other_urls = [url for url in urls if not any(path in url for path in ['/blog/', '/article/', '/post/', '/news/', '/content/']) and not any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])]
         
-        logger.info(f"URL breakdown: {len(content_urls)} content URLs, {len(image_urls)} image URLs, {len(other_urls)} other URLs")
+        logger.info("") #logger.info(f"URL breakdown: {len(content_urls)} content URLs, {len(image_urls)} image URLs, {len(other_urls)} other URLs")
         if content_urls:
             logger.info(f"Sample content URLs: {content_urls[:3]}")
         if image_urls:
