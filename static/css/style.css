@@ -501,6 +501,20 @@ body {
   margin: 0 4px;
 }
 
+.form-error {
+  margin-top: 8px;
+  color: #d32f2f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.form-success {
+  margin-top: 8px;
+  color: #16a34a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .button-container {
   display: flex;
   gap: 12px;

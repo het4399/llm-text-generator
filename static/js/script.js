@@ -36,6 +36,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const LLM_TOOL_KEY = '/llm-text-generator';
 
     // Cookie utility functions
+    function deleteCookie(name) {
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+    }
+
     function setCookie(name, value, days = 7) {
         if (name === 'inquiry_form_payload' || name === 'result_height') {
             // Session cookie (expires when browser closes)
@@ -86,7 +90,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!data.state.visitedTools.includes(toolKey)) {
                 data.state.visitedTools.push(toolKey);
                 sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(data));
-                console.log('Updated session storage:', data);
             }
         } catch (error) {
             console.error('Error updating session storage:', error);
@@ -102,8 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Function to initialize session storage on page load
     function initializeSessionStorage() {
         const data = getSessionStorage();
-        console.log('Current session storage:', data);
-        console.log('LLM tool visited:', isToolVisited(LLM_TOOL_KEY));
     }
 
     // Initialize result_height in both cookie and localStorage
@@ -127,10 +128,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const lsVal = localStorage.getItem('result_height');
         const result_height = (cookieVal !== null && cookieVal !== undefined) ? cookieVal : (lsVal !== null ? lsVal : '0');
         const numericHeight = parseInt(result_height, 10);
-        if (!isNaN(numericHeight) && numericHeight > 0) {
+        // Honor 0 before any content is rendered; otherwise use stored value
+        if (!isNaN(numericHeight) && numericHeight >= 0) {
             outputIframe.style.height = numericHeight + 'px';
         } else {
-            outputIframe.style.height = '400px'; // default visual height when stored is 0
+            outputIframe.style.height = '0px';
         }
     }
 
@@ -183,6 +185,12 @@ document.addEventListener('DOMContentLoaded', () => {
         otpInputs.forEach(input => input.value = '');
         // Focus first input
         otpInputs[0].focus();
+        // Clear any previous OTP error/success message
+        const otpError = document.getElementById('otpErrorMsg');
+        if (otpError) {
+            otpError.textContent = '';
+            otpError.className = 'form-error';
+        }
         
         otpModal.classList.add('show');
         document.body.style.overflow = 'hidden';
@@ -263,7 +271,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const iframeBody = iframeDoc.body;
             if (iframeBody) {
                 const result_height = iframeBody.scrollHeight;
-                const newHeight = Math.max(400, Math.min(result_height + 40, 600)); // Min 400px, Max 800px
+                // Clamp height between 400px (min) and 600px (max)
+                const newHeight = Math.max(400, Math.min(result_height + 40, 600));
                 outputIframe.style.height = newHeight + 'px';
                 saveIframeHeight();
             }
@@ -431,7 +440,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // Check if user has already verified OTP for this tool
+        // If inquiry_form_payload cookie has an email, skip OTP
+        const inquiryCookie = getCookie('inquiry_form_payload');
+        const hasInquiryEmail = inquiryCookie && inquiryCookie.uEmail;
+        if (hasInquiryEmail) {
+            // Mark as visited for this session and proceed directly
+            updateSessionStorage(LLM_TOOL_KEY);
+            userData = null; // Do not send userData to bypass server OTP gate
+            pendingGenerationData = {
+                url: url,
+                outputType: selectedOutputType
+            };
+            startGeneration();
+            return;
+        }
+
+        // Check if user has already verified OTP for this tool (session flag)
         if (isToolVisited(LLM_TOOL_KEY)) {
             // User has already verified, proceed directly to generation
             pendingGenerationData = {
@@ -461,14 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         userData = { name, email };
         
-        // Store form data in cookie
-        const inquiryFormPayload = {
-            uName: name,
-            uEmail: email,
-            ToolTitle: 'llm-text-generator',
-            ToolSubmit: 'Send'
-        };
-        setCookie('inquiry_form_payload', inquiryFormPayload); // Session cookie
+        // Do NOT store inquiry cookie yet; only after OTP verification succeeds
         
         // Get the submit button and show loading state
         const submitBtn = userDetailsForm.querySelector('.submit-btn');
@@ -516,7 +533,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const otp = Array.from(otpInputs).map(input => input.value).join('');
         
         if (otp.length !== 6) {
-            showError('Please enter a complete 6-digit OTP');
+            const otpError = document.getElementById('otpErrorMsg');
+            if (otpError) {
+                otpError.textContent = 'Please enter a complete 6-digit OTP';
+            } else {
+                showError('Please enter a complete 6-digit OTP');
+            }
             return;
         }
         
@@ -545,16 +567,40 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 // Update session storage to mark tool as visited
                 updateSessionStorage(LLM_TOOL_KEY);
+                // Persist verified inquiry cookie now
+                if (userData && userData.name && userData.email) {
+                    const inquiryFormPayload = {
+                        uName: userData.name,
+                        uEmail: userData.email,
+                        ToolTitle: 'llm-text-generator',
+                        ToolSubmit: 'Send'
+                    };
+                    setCookie('inquiry_form_payload', inquiryFormPayload);
+                }
                 
                 hideOtpModal();
                 // Start generation process
                 startGeneration();
             } else {
                 const errorData = await response.json();
-                showError('Invalid OTP: ' + (errorData.error || 'Please try again'));
+                const otpError = document.getElementById('otpErrorMsg');
+                if (otpError) {
+                    otpError.textContent = errorData.error || 'Invalid OTP. Please try again';
+                } else {
+                    showError('Invalid OTP: ' + (errorData.error || 'Please try again'));
+                }
+                // Ensure no stale inquiry cookie persists on failure
+                deleteCookie('inquiry_form_payload');
             }
         } catch (error) {
-            showError('Failed to verify OTP: ' + error.message);
+            const otpError = document.getElementById('otpErrorMsg');
+            if (otpError) {
+                otpError.textContent = 'Failed to verify OTP: ' + error.message;
+            } else {
+                showError('Failed to verify OTP: ' + error.message);
+            }
+            // Ensure no stale inquiry cookie persists on error
+            deleteCookie('inquiry_form_payload');
         } finally {
             // Reset button state
             submitBtn.textContent = originalText;
@@ -584,14 +630,29 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             if (response.ok) {
-                statusMessage.textContent = 'OTP resent successfully!';
-                statusMessage.className = 'status-message status-success';
+                const otpError = document.getElementById('otpErrorMsg');
+                if (otpError) {
+                    otpError.textContent = 'OTP resent successfully!';
+                    otpError.className = 'form-success';
+                }
             } else {
                 const errorData = await response.json();
-                showError('Failed to resend OTP: ' + (errorData.error || 'Unknown error'));
+                const otpError = document.getElementById('otpErrorMsg');
+                if (otpError) {
+                    otpError.textContent = 'Failed to resend OTP: ' + (errorData.error || 'Unknown error');
+                    otpError.className = 'form-error';
+                } else {
+                    showError('Failed to resend OTP: ' + (errorData.error || 'Unknown error'));
+                }
             }
         } catch (error) {
-            showError('Failed to resend OTP: ' + error.message);
+            const otpError = document.getElementById('otpErrorMsg');
+            if (otpError) {
+                otpError.textContent = 'Failed to resend OTP: ' + error.message;
+                otpError.className = 'form-error';
+            } else {
+                showError('Failed to resend OTP: ' + error.message);
+            }
         } finally {
             // Reset button state
             resendOtpBtn.textContent = originalText;
@@ -894,7 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 250);
     });
-
+    
     // Cleanup function to handle page unload
     window.addEventListener('beforeunload', () => {
         clearProgressAnimation();
