@@ -17,6 +17,8 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 import json
 from markdownify import markdownify
+import zipfile
+import io
 
 # Configure logging
 logging.basicConfig(
@@ -1042,12 +1044,12 @@ def get_page_summary(page_url, link_title=None):
                 return get_fallback_summary(soup, page_url, link_title, error_prefix="API error: ")
             
             except openai.APIConnectionError as e:
-                logger.error(f"OpenAI connection error for {page_url}: {str(e)}")
+                logger.error("OpenAI connection error for %s: %s", page_url, str(e))
                 return get_fallback_summary(soup, page_url, link_title, error_prefix="Connection error: ")
             
-            except openai.AuthenticationError as e:
-                logger.error(f"OpenAI authentication error: {str(e)}")
-                return get_fallback_summary(soup, page_url, link_title, error_prefix="Auth error: ")
+            except openai.APIError as e:
+                logger.error("OpenAI API error for %s: %s", page_url, str(e))
+                return get_fallback_summary(soup, page_url, link_title, error_prefix="API error: ")
             
             except Exception as e:
                 logger.error(f"LLM error for {page_url}: {str(e)}")
@@ -2438,11 +2440,26 @@ def generate_llm_text():
             llms_text = format_llms_text(website_url, site_description, successful_summary_links, failed_summary_links)
             llms_full_text_output = format_llms_full_text(website_url, site_description, successful_full_sections, failed_full_sections)
             
-            logger.info("Successfully generated both content types")
+            # Create zip file with two separate .txt files
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                # Add llms.txt (summarized content)
+                zip_file.writestr('llms.txt', llms_text.encode('utf-8'))
+                # Add llms-full.txt (full content)
+                zip_file.writestr('llms-full.txt', llms_full_text_output.encode('utf-8'))
+            
+            zip_buffer.seek(0)
+            
+            logger.info("Successfully generated both content types and created zip file")
             processing_time = time.time() - start_time
             total_words = sum(len(link.get("summary", "").split()) for link in successful_summary_links) + \
                          sum(len(section.get("content", "").split()) for section in successful_full_sections)
             log_request(website_url, output_type, True, None, processing_time, total_words)
+            
+            # Store zip file data for download
+            zip_data = zip_buffer.getvalue()
+            
+            # Return JSON with content for display and zip data
             return jsonify({
                 "llms_text": llms_text,
                 "llms_full_text": llms_full_text_output,
@@ -2450,7 +2467,9 @@ def generate_llm_text():
                 "successful_summary_links": successful_summary_links,
                 "failed_summary_links": failed_summary_links,
                 "successful_full_sections": successful_full_sections,
-                "failed_full_sections": failed_full_sections
+                "failed_full_sections": failed_full_sections,
+                "zip_data": zip_data.hex(),  # Convert binary to hex string for JSON
+                "is_zip_mode": True
             })
 
         else:

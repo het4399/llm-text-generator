@@ -203,15 +203,22 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (response.ok) {
-                const result = await response.json();
                 completeProgressAnimation();
                 setProcessingState(false);
 
-                if (result.llms_text && result.llms_full_text) {
-                    // Both outputs available
+                // Handle JSON response
+                const result = await response.json();
+                
+                if (result.is_zip_mode) {
+                    // Both mode - store zip data and show combined content
+                    const zipData = result.zip_data;
+                    const zipBytes = new Uint8Array(zipData.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                    window.storedZipBlob = new Blob([zipBytes], { type: 'application/zip' });
+                    
+                    // Show combined content in textarea
                     const combinedOutput = `=== SUMMARIZED CONTENT ===\n\n${result.llms_text}\n\n=== FULL TEXT CONTENT ===\n\n${result.llms_full_text}`;
                     outputText.value = combinedOutput;
-                    statusMessage.textContent = 'Both LLM Text and Full Text generated successfully!';
+                    statusMessage.textContent = 'Both LLM Text and Full Text generated successfully! Click download to get the zip file with separate .txt files.';
                     statusMessage.className = 'status-success';
                 } else if (result.llms_text) {
                     outputText.value = result.llms_text;
@@ -219,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusMessage.className = 'status-success';
                 } else if (result.llms_full_text) {
                     outputText.value = result.llms_full_text;
-                    statusMessage.textContent = 'LLM Full Text generated successfully! (Note: This content can be very large and may require specific LLM handling like RAG or a large context window.)';
+                    statusMessage.textContent = 'LLM Full Text generated successfully!';
                     statusMessage.className = 'status-success';
                 } else {
                     showError('Unexpected response format from server.');
@@ -278,12 +285,31 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get the selected output type to determine filename
         const selectedOutputType = document.querySelector('input[name="outputType"]:checked').value;
         
-        // Set filename based on output type
+        // For both mode, use the stored zip blob
+        if (selectedOutputType === 'llms_both') {
+            if (window.storedZipBlob) {
+                // Download the stored zip file
+                const downloadUrl = window.URL.createObjectURL(window.storedZipBlob);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = downloadUrl;
+                downloadLink.download = 'llms-both.zip';
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+                window.URL.revokeObjectURL(downloadUrl);
+                
+                statusMessage.textContent = 'Zip file downloaded successfully!';
+                statusMessage.className = 'status-success';
+            } else {
+                showError('No zip file available. Please generate content first.');
+            }
+            return;
+        }
+        
+        // For other modes, download as text file
         let filename = 'llms.txt'; // default
         if (selectedOutputType === 'llms_full_txt') {
             filename = 'llms-full.txt';
-        } else if (selectedOutputType === 'llms_both') {
-            filename = 'llms-both.txt';
         }
         
         // Create a blob with the text content
@@ -323,6 +349,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Clear status message
         statusMessage.textContent = '';
         statusMessage.className = '';
+        
+        // Clear stored zip blob
+        window.storedZipBlob = null;
         
         // Hide copy and download buttons
         copyBtn.style.display = 'none';
